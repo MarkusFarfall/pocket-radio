@@ -1,0 +1,111 @@
+/* Стили интерфейса: подключаются после Tailwind, поэтому перекрывают его утилиты. Значения задаёт src/lib/uiStyle.ts. */
+
+:root {
+  --ui-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ui-display: "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+}
+body {
+  font-family: var(--ui-font);
+}
+.font-display {
+  font-family: var(--ui-display);
+}
+[data-nav] button,
+[data-nav] input,
+[data-nav] select,
+[data-nav] textarea {
+  font-family: inherit;
+}
+
+/* ---- Карточки ---- */
+/* «Тени»: без рамок, мягкая глубина */
+[data-surface="soft"] .bg-surface.border-line {
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 12px 30px -12px rgb(0 0 0 / 0.18);
+}
+.dark[data-surface="soft"] .bg-surface.border-line {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 14px 32px -12px rgb(0 0 0 / 0.55);
+}
+
+/* «Плоские»: без рамок, карточки — тонированные блоки */
+[data-surface="flat"] .bg-surface.border-line {
+  background: var(--surface-2);
+  border-color: transparent;
+}
+[data-surface="flat"] .bg-surface.border-line .bg-bg {
+  background: var(--surface);
+}
+
+/* «Стекло»: полупрозрачные панели поверх цветного фона */
+[data-surface="glass"] body {
+  background:
+    radial-gradient(62rem 40rem at 8% -12%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 62%),
+    radial-gradient(52rem 38rem at 100% 8%, color-mix(in srgb, var(--accent) 14%, #5b6cff 22%), transparent 62%),
+    radial-gradient(46rem 34rem at 60% 110%, color-mix(in srgb, var(--accent) 16%, #00c2a8 16%), transparent 62%), var(--bg);
+  background-attachment: fixed;
+}
+[data-surface="glass"] #app-shell {
+  background: transparent;
+}
+[data-surface="glass"] .bg-surface.border-line {
+  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 11%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  backdrop-filter: blur(16px) saturate(1.5);
+}
+[data-surface="glass"] aside,
+[data-surface="glass"] header,
+[data-surface="glass"] nav.fixed {
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+/* «Жирные рамки»: тяжёлый контур и жёсткая тень */
+[data-surface="bold"] .bg-surface.border-line {
+  border-width: 2px;
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+/* ---- Форма обложек ---- */
+[data-cover="square"] .cover {
+  border-radius: 0 !important;
+}
+[data-cover="circle"] .cover {
+  border-radius: 9999px !important;
+}
+[data-cover="circle"] .cover img {
+  padding: 20%;
+}
+
+/* ---- Подсветка найденной настройки ---- */
+@keyframes row-flash {
+  0%,
+  55% {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+.row-flash {
+  animation: row-flash 1.8s ease-out;
+  border-radius: inherit;
+}
+
+/* ---- Компоновка «Студия» (компьютер): панели на тёмном «подстилающем» фоне ---- */
+.studio-shell {
+  background: color-mix(in srgb, var(--bg) 90%, #000);
+}
+
+/* ---- Анимации ---- */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

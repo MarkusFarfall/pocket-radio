@@ -1,0 +1,21 @@
+{
+  "name": "Pocket Radio",
+  "short_name": "Pocket Radio",
+  "description": "Интернет-радио в кармане: свои потоки, подборки, поиск станций, подкасты, статистика и работа офлайн.",
+  "lang": "ru",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e0f12",
+  "theme_color": "#e4532b",
+  "categories": ["music", "entertainment"],
+  "icons": [
+    { "src": "icon-512.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" },
+    { "src": "icon-512.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Добавить станцию", "short_name": "Добавить", "url": "./#new", "icons": [{ "src": "icon-512.jpg", "sizes": "512x512", "type": "image/jpeg" }] }
+  ]
+}

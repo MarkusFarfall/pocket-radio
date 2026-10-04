@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Pocket Radio — интернет-радио в кармане</title>
+    <meta name="description" content="Pocket Radio: свои радиопотоки, готовые подборки, поиск станций, подкасты, статистика и работа офлайн." />
+    <meta name="theme-color" content="#f6f4ef" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Pocket Radio" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/jpeg" href="/icon-512.jpg" />
+    <link rel="apple-touch-icon" href="/icon-512.jpg" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("radio.theme") || "system";
+          var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          if (dark) root.classList.add("dark");
+          // палитра и акцент, выбранные в настройках: применяем до первой отрисовки, чтобы не мигала другая тема
+          // стиль интерфейса (скругления, плотность, шрифт, вид карточек)
+          var uv = JSON.parse(localStorage.getItem("pr.uiv") || "null");
+          if (uv) {
+            for (var uk in uv.vars) root.style.setProperty(uk, uv.vars[uk]);
+            for (var ua in uv.attrs) root.setAttribute("data-" + ua, uv.attrs[ua]);
+            if (uv.fs) root.style.fontSize = uv.fs;
+          }
+          var tv = JSON.parse(localStorage.getItem("pr.tv") || "null");
+          if (tv) {
+            var v = dark ? tv.dark : tv.light;
+            for (var k in v) root.style.setProperty("--" + k, v[k]);
+            root.style.colorScheme = dark ? "dark" : "light";
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
