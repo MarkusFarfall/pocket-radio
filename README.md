@@ -12,8 +12,10 @@ Supabase Auth (REST без SDK).
 **Supabase:** проект [`pocket-radio`](https://supabase.com/dashboard/project/zcohgsqefkygwvyzrico)
 (`zcohgsqefkygwvyzrico`, Frankfurt). Схема уже накатана.
 
-Прод: отдельный проект Vercel с **Root Directory** = `projects/pocket-radio`.
-После создания проекта адрес появится в каталоге `site/`.
+**Живая версия:** https://pocket-radio-iota.vercel.app
+
+Прод: проект Vercel `pocket-radio`, **Root Directory** = `projects/pocket-radio`,
+пуш в `main` деплоится автоматически.
 
 ## Что умеет
 
