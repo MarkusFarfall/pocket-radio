@@ -1,11 +1,12 @@
 import { useSyncExternalStore } from "react";
 import type Hls from "hls.js";
 import { db, getSetting, setSetting } from "./db";
-import type { FallbackInfo, Session, Station } from "./types";
+import { itemStationId, itemToStation, loadProgress } from "./playlistModel";
+import type { FallbackInfo, Playlist, Session, Station } from "./types";
 import { ambient } from "./ambient";
 import { fixText } from "./text";
 import { cachedBlobUrl } from "./offline";
-import { isLanUrl, mixedContentRisk } from "./templates";
+import { isLanUrl, mixedContentRisk, uid } from "./templates";
 import { artworkFor } from "./artwork";
 import { toast } from "./toast";
 
@@ -40,6 +41,8 @@ export interface PlayerState {
   history: TrackEntry[];
   /** режим «нет интернета»: играет эмбиент или офлайн-станция вместо эфира */
   fallback: FallbackInfo | null;
+  /** Плейлист, из которого запущен трек; нужен для быстрого возврата из полноэкранного плеера. */
+  sourcePlaylistId: string | null;
 }
 
 export interface TimeState {
@@ -48,6 +51,7 @@ export interface TimeState {
 }
 
 interface Track {
+  syncId: string;
   stationId: string;
   stationName: string;
   stationLogo?: string;
@@ -87,6 +91,9 @@ class Engine {
   private sleepTimer: number | null = null;
   private lastResumeSave = 0;
   private switching = false;
+  private wantsPlayback = false;
+  private hiddenWhilePlaying = false;
+  private handledEndedToken: number | null = null;
 
   constructor() {
     const vol = Number(localStorage.getItem("radio.volume") ?? "0.8");
@@ -105,6 +112,7 @@ class Engine {
       rate: Number(localStorage.getItem("radio.rate")) || 1,
       history: [],
       fallback: null,
+      sourcePlaylistId: null,
     };
     const a = this.audio;
     a.preload = "none";
@@ -117,9 +125,47 @@ class Engine {
     a.addEventListener("timeupdate", this.onTime);
     a.addEventListener("durationchange", this.onTime);
     window.setInterval(() => this.flush(false), 10000);
-    window.addEventListener("pagehide", () => this.flush(false));
-    document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && this.flush(false));
+    window.addEventListener("pagehide", this.onPageHide);
+    window.addEventListener("pageshow", this.onPageShow);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
     this.setupMediaSession();
+  }
+
+  private markHidden = () => {
+    const status = this.state.status;
+    if (this.wantsPlayback && !this.state.fallback && (status === "playing" || status === "loading" || status === "buffering")) {
+      this.hiddenWhilePlaying = true;
+    }
+  };
+
+  private onPageHide = () => {
+    this.markHidden();
+    void this.flush(false);
+  };
+
+  private onPageShow = () => this.recoverAfterBackground();
+
+  private onVisibilityChange = () => {
+    if (document.visibilityState === "hidden") {
+      this.markHidden();
+      void this.flush(false);
+      return;
+    }
+    this.recoverAfterBackground();
+  };
+
+  /** Recover a VOD queue if the browser deferred its ended event while the page was suspended. */
+  private recoverAfterBackground() {
+    if (!this.hiddenWhilePlaying) return;
+    this.hiddenWhilePlaying = false;
+    if (!this.wantsPlayback || this.state.fallback || !this.state.station) return;
+    const finiteTrackEnded = this.audio.ended && Number.isFinite(this.audio.duration) && this.audio.duration > 0;
+    if ((!this.state.isLive || finiteTrackEnded) && this.audio.ended && !this.switching) {
+      this.handleEnded();
+      return;
+    }
+    // Some mobile browsers pause a media element when resuming a frozen page.
+    if (this.state.status === "paused" && !this.audio.ended) void this.resume();
   }
 
   /* ------------------------------- store ------------------------------- */
@@ -190,27 +236,62 @@ class Engine {
       } else if (fresh !== cur) {
         const urlChanged = fresh.url !== cur.url;
         this.set({ station: fresh });
-        if (urlChanged && this.state.status === "playing") void this.play(fresh);
+        if (urlChanged && this.state.status === "playing") void this.play(fresh, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId });
         else this.updateMediaSession();
       }
     }
   }
 
-  /** Восстановить последнюю станцию без автозапуска. */
+  /** Восстановить последнюю станцию/позицию без автозапуска. */
   async restore() {
-    const id = await getSetting<string | null>("lastStationId", null);
-    const queue = await getSetting<string[]>("lastQueue", []);
-    const st = id ? this.catalog.get(id) : undefined;
+    const [id, savedQueue, savedPlaylistId] = await Promise.all([
+      getSetting<string | null>("lastStationId", null),
+      getSetting<string[]>("lastQueue", []),
+      getSetting<string | null>("lastSourcePlaylistId", null),
+    ]);
+    let queue = Array.isArray(savedQueue) ? savedQueue.filter((x): x is string => typeof x === "string") : [];
+    let sourcePlaylistId = savedPlaylistId;
+    let st = id ? this.catalog.get(id) : undefined;
+
+    // Плейлистовые станции (`pli:*`) не входят в каталог, поэтому их нужно собрать из сохранённого плейлиста.
+    if (id?.startsWith("pli:") && !st) {
+      try {
+        const rows = await db.settings.where(":id").startsWith("pl:").toArray();
+        const playlists = rows.map((row) => row.value as Playlist).filter((playlist) => playlist && typeof playlist.id === "string" && Array.isArray(playlist.items));
+        const containsCurrent = (playlist: Playlist) => playlist.items.some((item) => typeof item?.id === "string" && itemStationId(item.id) === id);
+        const playlist = (sourcePlaylistId ? playlists.find((item) => item.id === sourcePlaylistId && containsCurrent(item)) : undefined)
+          ?? playlists.find(containsCurrent);
+        if (playlist) {
+          const items = playlist.items.filter((item) => item && typeof item.id === "string" && typeof item.url === "string");
+          const progress = await loadProgress(items.map((item) => item.id));
+          const stations = items.map((item) => itemToStation(item, progress.get(item.id)));
+          const byId = new Map(stations.map((item) => [item.id, item]));
+          st = byId.get(id);
+          if (st) {
+            this.pin(stations);
+            const validQueue = queue.filter((queueId) => byId.has(queueId));
+            queue = validQueue.length ? validQueue : stations.map((item) => item.id);
+            if (!queue.includes(id)) queue = [id, ...queue];
+            sourcePlaylistId = playlist.id;
+          }
+        }
+      } catch {
+        // Повреждённый/удалённый плейлист не должен ломать восстановление обычной станции.
+      }
+    }
+
     if (st && !this.state.station) {
+      if (!queue.includes(st.id)) queue = [st.id, ...queue];
       this.audio.muted = false;
-      this.set({ station: st, status: "paused", isLive: st.kind !== "vod", queue });
+      this.set({ station: st, status: "paused", isLive: st.kind !== "vod", queue, sourcePlaylistId });
       this.setTime({ position: st.resumePos ?? 0, duration: 0 });
       this.updateMediaSession();
     }
   }
 
   /* ------------------------------ управление ------------------------------ */
-  async play(station: Station, queue?: string[], opts?: { fallback?: FallbackInfo }) {
+  async play(station: Station, queue?: string[], opts?: { fallback?: FallbackInfo; sourcePlaylistId?: string | null }) {
+    this.wantsPlayback = true;
     // «разбудить» звук прямо в обработчике нажатия — на iOS иначе эмбиент потом не запустится
     ambient.prime();
     // обычный запуск станции выключает режим «нет интернета» (эмбиент останавливается)
@@ -231,6 +312,7 @@ class Engine {
       queue: q.includes(station.id) ? q : [station.id, ...q],
       fromCache: false,
       fallback: opts?.fallback ?? null,
+      sourcePlaylistId: opts?.sourcePlaylistId ?? null,
     });
     this.setTime({ position: station.resumePos ?? 0, duration: 0 });
     const rate = station.kind === "vod" ? this.state.rate : 1;
@@ -238,6 +320,7 @@ class Engine {
     this.audio.playbackRate = rate;
     void setSetting("lastStationId", station.id);
     void setSetting("lastQueue", this.state.queue);
+    void setSetting("lastSourcePlaylistId", this.state.sourcePlaylistId);
     this.updateMediaSession();
     try {
       await this.attach(station, my);
@@ -271,6 +354,8 @@ class Engine {
   }
 
   pause() {
+    this.wantsPlayback = false;
+    this.hiddenWhilePlaying = false;
     if (!this.state.station) return;
     const fb = this.state.fallback;
     if (fb) {
@@ -292,8 +377,10 @@ class Engine {
   async resume() {
     const st = this.state.station;
     if (!st) return;
+    this.wantsPlayback = true;
+    this.hiddenWhilePlaying = false;
     if (this.state.isLive || !this.audio.src) {
-      await this.play(st);
+      await this.play(st, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId });
     } else {
       try {
         await this.audio.play();
@@ -327,6 +414,7 @@ class Engine {
       isLive: true,
       fromCache: false,
       meta: { title: info.title, artist: info.manual ? "Pocket Radio" : "Нет интернета" },
+      sourcePlaylistId: info.manual ? null : this.state.sourcePlaylistId,
     });
     this.setTime({ position: 0, duration: 0 });
     this.updateMediaSession();
@@ -339,17 +427,21 @@ class Engine {
   }
 
   stop() {
+    this.wantsPlayback = false;
+    this.hiddenWhilePlaying = false;
     if (this.state.fallback) this.fallbackStop?.(false);
     this.token++;
     void this.closeTrack();
     this.audio.pause();
     this.teardownSource();
-    this.set({ station: null, status: "idle", meta: null, error: null, fallback: null });
+    this.set({ station: null, status: "idle", meta: null, error: null, fallback: null, sourcePlaylistId: null });
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = "none";
     }
     void setSetting("lastStationId", null);
+    void setSetting("lastQueue", []);
+    void setSetting("lastSourcePlaylistId", null);
   }
 
   step(dir: 1 | -1) {
@@ -359,7 +451,7 @@ class Engine {
     if (!ids.length) return;
     const i = ids.indexOf(station.id);
     const next = this.lookup(ids[(i + dir + ids.length) % ids.length]);
-    if (next && next.id !== station.id) void this.play(next);
+    if (next && next.id !== station.id) void this.play(next, queue, { sourcePlaylistId: this.state.sourcePlaylistId });
   }
 
   toggleMute() {
@@ -532,6 +624,7 @@ class Engine {
     this.set({ status: "playing", error: null });
     if (!this.track || this.track.stationId !== st.id) {
       this.track = {
+        syncId: uid(),
         stationId: st.id,
         stationName: st.name,
         stationLogo: st.logo,
@@ -604,23 +697,30 @@ class Engine {
     this.fail(msg, my, false);
   };
 
-  private onEnded = () => {
+  private onEnded = () => this.handleEnded();
+
+  private handleEnded() {
+    if (this.switching || this.handledEndedToken === this.token) return;
+    this.handledEndedToken = this.token;
     this.pauseTrack();
-    if (this.state.isLive) {
+    // Некоторые mp3-файлы в плейлистах импортируются как обычный HTTP-источник, а не как VOD.
+    // Если браузер сообщил конечную длительность и дошёл до ended, это трек, не оборвавшийся эфир.
+    const finiteTrackEnded = !this.state.isLive || (this.audio.ended && Number.isFinite(this.audio.duration) && this.audio.duration > 0);
+    if (!finiteTrackEnded) {
       this.logEvent("error", "Поток завершился");
       this.fail("Поток завершился", this.token, false);
       return;
     }
     const st = this.state.station;
     if (st) {
-      void db.stations.update(st.id, { resumePos: 0 });
+      void db.stations.update(st.id, { resumePos: 0, resumeUpdatedAt: Date.now() });
       this.progressSink?.(st, 0);
     }
     this.set({ status: "paused" });
     this.setTime({ position: 0 });
     // дальше по очереди (серии подкаста, плейлист) — до последнего трека, без зацикливания
-    if (this.hasNext()) this.step(1);
-  };
+    if (this.wantsPlayback && this.hasNext()) this.step(1);
+  }
 
   private onTime = () => {
     const a = this.audio;
@@ -629,7 +729,7 @@ class Engine {
     const st = this.state.station;
     if (!this.state.isLive && st && Date.now() - this.lastResumeSave > 5000 && a.currentTime > 1) {
       this.lastResumeSave = Date.now();
-      void db.stations.update(st.id, { resumePos: Math.floor(a.currentTime) });
+      void db.stations.update(st.id, { resumePos: Math.floor(a.currentTime), resumeUpdatedAt: Date.now() });
       this.progressSink?.(st, a.currentTime);
       if ("mediaSession" in navigator && dur) {
         try {
@@ -681,6 +781,7 @@ class Engine {
       const delta = total - t.savedMs;
       t.savedMs = total;
       const rec: Session = {
+        syncId: t.syncId,
         stationId: t.stationId,
         stationName: t.stationName,
         stationLogo: t.stationLogo,

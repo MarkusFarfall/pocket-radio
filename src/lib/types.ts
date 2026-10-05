@@ -9,6 +9,8 @@ export interface Health {
 
 export interface Station {
   id: string;
+  /** Сохраняет идентичность станции, если устройства сопоставили её по URL, но используют разные id. */
+  syncId?: string;
   name: string;
   url: string;
   kind: StreamKind;
@@ -26,6 +28,8 @@ export interface Station {
   plays: number;
   totalSeconds: number;
   resumePos?: number; // секунды, для VOD/подкастов
+  /** Время изменения позиции воспроизведения, отдельно от метаданных станции. */
+  resumeUpdatedAt?: number;
   demo?: boolean;
   health?: Health;
   /** https-адрес логотипа станции (необязателен) */
@@ -34,6 +38,8 @@ export interface Station {
 
 export interface Session {
   id?: number;
+  /** стабильный идентификатор между снимками и устройствами; старые бэкапы могут его не содержать */
+  syncId?: string;
   stationId: string;
   genre: string;
   mood: string;

@@ -12,6 +12,7 @@ import { getDesktopPrefs, setDesktopPrefs, useDesktopPrefs, useIsDesktop } from 
 import { NAV } from "./lib/nav";
 import { useTabHistory } from "./lib/useTabHistory";
 import { useHotkeys } from "./lib/useHotkeys";
+import { gotoPlaylist } from "./lib/picker";
 import { useFileDrop } from "./lib/useFileDrop";
 import { useAuth } from "./lib/auth/AuthContext";
 import { cn } from "./utils/cn";
@@ -218,7 +219,7 @@ export default function App() {
 
   const overlays = (
     <>
-      <FullPlayer open={playerOpen && hasPlayer} onClose={() => setPlayerOpen(false)} onEdit={openEdit} onQr={setQrStation} />
+      <FullPlayer open={playerOpen && hasPlayer} onClose={() => setPlayerOpen(false)} onEdit={openEdit} onQr={setQrStation} onBackToPlaylist={gotoPlaylist} />
       <StationMenu station={menuStation} onClose={() => setMenuStation(null)} onPlay={(s) => onPlay(s, stations.map((x) => x.id))} onEdit={openEdit} onQr={setQrStation} />
       <StationForm
         open={formOpen}

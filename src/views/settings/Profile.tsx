@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Cloud, CloudDownload, CloudUpload, Loader2, LogOut } from "lucide-react";
 import { Avatar } from "../../components/AccountUI";
 import { btnGhost, btnPrimary } from "../../components/ui";
@@ -10,7 +10,8 @@ import { Group, Row } from "./parts";
 export function Profile({ online, onAccount }: { online: boolean; onAccount: () => void }) {
   const auth = useAuth();
   const [busy, setBusy] = useState<"push" | "pull" | null>(null);
-  const [syncedAt, setSyncedAt] = useState<number | null>(() => lastSyncAt());
+  const [syncedAt, setSyncedAt] = useState<number | null>(() => lastSyncAt(auth.user?.id ?? null));
+  useEffect(() => setSyncedAt(lastSyncAt(auth.user?.id ?? null)), [auth.user?.id]);
   const code = (t: string) => <code className="font-mono">{t}</code>;
 
   return (
@@ -56,8 +57,12 @@ export function Profile({ online, onAccount }: { online: boolean; onAccount: () 
           </Row>
         ) : (
           <Row
-            title="Синхронизация с Supabase"
-            desc={syncedAt ? `Последний обмен: ${new Date(syncedAt).toLocaleString("ru", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Данные ещё не отправлялись. Загрузка из облака добавляет станции к вашим, ничего не стирая."}
+            title="Облачный обмен (вручную)"
+            desc={
+              syncedAt
+                ? `Последний обмен: ${new Date(syncedAt).toLocaleString("ru", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}. Загрузка объединяет записи; удаления и сами офлайн-аудиофайлы между устройствами не переносятся.`
+                : "Если в облаке уже есть копия, сначала загрузите её на устройство. Обмен объединяет записи, но не переносит удаления и сами офлайн-аудиофайлы."
+            }
             stack
           >
             <div className="grid grid-cols-2 gap-2">
@@ -68,7 +73,7 @@ export function Profile({ online, onAccount }: { online: boolean; onAccount: () 
                   setBusy("push");
                   try {
                     await pushToCloud();
-                    setSyncedAt(lastSyncAt());
+                    setSyncedAt(lastSyncAt(auth.user?.id ?? null));
                     toast("Данные отправлены в облако", "ok");
                   } catch (e) {
                     toast(e instanceof Error ? e.message : "Не удалось отправить", "error");
@@ -86,8 +91,8 @@ export function Profile({ online, onAccount }: { online: boolean; onAccount: () 
                   setBusy("pull");
                   try {
                     const r = await pullFromCloud();
-                    setSyncedAt(lastSyncAt());
-                    toast(r ? `Загружено: станций ${r.added}` : "В облаке пока нет данных", r ? "ok" : "info");
+                    setSyncedAt(lastSyncAt(auth.user?.id ?? null));
+                    toast(r ? `Загружено — станций: ${r.added}, сессий: ${r.sessions}, событий: ${r.events}, треков: ${r.tracks}, плейлистов: ${r.playlists}` : "В облаке пока нет данных", r ? "ok" : "info");
                   } catch (e) {
                     toast(e instanceof Error ? e.message : "Не удалось загрузить", "error");
                   } finally {

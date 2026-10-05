@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  ArrowLeft,
   BookmarkPlus,
   ChevronDown,
   Copy,
@@ -75,9 +76,9 @@ async function favorite(st: Station) {
 
 /** Закрыть плеер (свайп, крестик) с возможностью вернуть. */
 function dismissPlayer() {
-  const { station, queue } = player.getState();
+  const { station, queue, sourcePlaylistId } = player.getState();
   player.stop();
-  if (station) toast("Плеер закрыт", "info", { label: "Вернуть", run: () => void player.play(station, queue) });
+  if (station) toast("Плеер закрыт", "info", { label: "Вернуть", run: () => void player.play(station, queue, { sourcePlaylistId }) });
 }
 
 /* ------------------------------ свайп для закрытия ------------------------------ */
@@ -497,11 +498,13 @@ export function FullPlayer({
   onClose,
   onEdit,
   onQr,
+  onBackToPlaylist,
 }: {
   open: boolean;
   onClose: () => void;
   onEdit: (s: Station) => void;
   onQr: (s: Station) => void;
+  onBackToPlaylist: (id: string) => void;
 }) {
   const p = usePlayer();
   const st = p.station;
@@ -518,7 +521,9 @@ export function FullPlayer({
   const hue = hueOf(st.name);
   const fav = !!saved?.favorite;
   const podcast = isPodcastMedia(st);
-  const upcoming = player.queueItems().filter((s) => s.id !== st.id).slice(0, 3);
+  const queueItems = player.queueItems();
+  const queueIndex = queueItems.findIndex((s) => s.id === st.id);
+  const upcoming = (queueIndex >= 0 ? queueItems.slice(queueIndex + 1) : queueItems.filter((s) => s.id !== st.id)).slice(0, 3);
 
   const remove = async () => {
     if (!saved) return;
@@ -535,17 +540,29 @@ export function FullPlayer({
         <div className="player-aurora pointer-events-none absolute inset-0 opacity-0" />
         {appearance.colorWash && <div className="player-wash pointer-events-none absolute inset-x-0 top-0 h-56 opacity-35 blur-3xl" style={{ background: `radial-gradient(circle at 50% 18%, hsl(${hue} 78% 56%), transparent 70%)` }} />}
         <div className="relative">
-          <div className="flex items-center justify-between">
-            <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-ink" aria-label="Свернуть">
+          <div className="flex items-center justify-between gap-2">
+            <button onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink" aria-label="Свернуть плеер">
               <ChevronDown size={21} />
             </button>
-            <span className="text-sm font-semibold text-muted">Сейчас играет</span>
+            {p.sourcePlaylistId ? (
+              <button
+                onClick={() => onBackToPlaylist(p.sourcePlaylistId!)}
+                className="inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full bg-surface-2 px-3 text-sm font-semibold text-ink transition hover:bg-surface-2/80"
+                aria-label="Вернуться к плейлисту"
+                title="Вернуться к плейлисту"
+              >
+                <ArrowLeft size={16} className="shrink-0" />
+                <span className="truncate">К плейлисту</span>
+              </button>
+            ) : (
+              <span className="text-sm font-semibold text-muted">Сейчас играет</span>
+            )}
             {saved ? (
-              <button onClick={() => onEdit(saved)} className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-ink" aria-label="Редактировать">
+              <button onClick={() => onEdit(saved)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink" aria-label="Редактировать">
                 <Pencil size={18} />
               </button>
             ) : (
-              <span className="h-10 w-10" />
+              <span className="h-10 w-10 shrink-0" />
             )}
           </div>
 
@@ -621,7 +638,7 @@ export function FullPlayer({
             </div>
             {upcoming.length ? (
               <ul className="border-t border-line/70 px-1.5 py-1">
-                {upcoming.map((s) => <li key={s.id}><button onClick={() => void player.play(s)} className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2"><Cover s={s} size={38} className="rounded-lg" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{s.name}</span><span className="block truncate text-xs text-muted">{s.genre || s.city || mediaLabel(s, s.kind !== "vod")}</span></span><Play size={14} className="shrink-0 fill-current text-muted" /></button></li>)}
+                {upcoming.map((s) => <li key={s.id}><button onClick={() => void player.play(s, p.queue, { sourcePlaylistId: p.sourcePlaylistId })} className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2"><Cover s={s} size={38} className="rounded-lg" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{s.name}</span><span className="block truncate text-xs text-muted">{s.genre || s.city || mediaLabel(s, s.kind !== "vod")}</span></span><Play size={14} className="shrink-0 fill-current text-muted" /></button></li>)}
               </ul>
             ) : <p className="border-t border-line/70 px-3.5 py-3 text-xs leading-relaxed text-muted">В очереди больше ничего нет. Добавьте трек в плейлист или выберите другую станцию.</p>}
           </section>
@@ -650,7 +667,18 @@ export function FullPlayer({
             <button onClick={onClose} className="rounded-full bg-surface-2/80 p-2 text-ink backdrop-blur transition hover:brightness-95" aria-label="Свернуть">
               <ChevronDown size={22} />
             </button>
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">{mediaLabel(st, p.isLive)}</span>
+            {p.sourcePlaylistId ? (
+              <button
+                onClick={() => onBackToPlaylist(p.sourcePlaylistId!)}
+                className="inline-flex items-center gap-2 rounded-full bg-surface-2/80 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-surface-2"
+                aria-label="Вернуться к плейлисту"
+                title="Вернуться к плейлисту"
+              >
+                <ArrowLeft size={15} /> К плейлисту
+              </button>
+            ) : (
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">{mediaLabel(st, p.isLive)}</span>
+            )}
             {saved ? (
               <button onClick={() => onEdit(saved)} className="rounded-full bg-surface-2/80 p-2 text-ink backdrop-blur transition hover:brightness-95" aria-label="Редактировать">
                 <Pencil size={20} />

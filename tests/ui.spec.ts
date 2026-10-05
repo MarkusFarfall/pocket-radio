@@ -199,9 +199,9 @@ test("mobile navigation, statistics, settings, and full player stay usable", asy
   await expectNoHorizontalPageOverflow(page);
 
   await miniPlayer.click();
-  await expect(page.getByRole("button", { name: "Свернуть" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Свернуть плеер" })).toBeVisible();
   await expect(page.locator(".player-mobile")).toBeVisible();
   await expectNoHorizontalPageOverflow(page);
-  await page.getByRole("button", { name: "Свернуть" }).click();
+  await page.getByRole("button", { name: "Свернуть плеер" }).click();
   await expect(miniPlayer).toBeVisible();
 });

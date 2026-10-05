@@ -296,14 +296,15 @@ class Resilience {
     if (this.leaving) return;
     this.leaving = true;
     try {
-      const fb = player.getState().fallback;
+      const state = player.getState();
+      const fb = state.fallback;
       setOffer(null);
       setRecovery(null);
       connectivity.setFast(false);
       if (fb?.kind === "ambient") ambient.stop(1.2);
       player.leaveFallback("paused");
       if (fb?.manual) player.stop();
-      else if (resume && fb?.original) await player.play(fb.original);
+      else if (resume && fb?.original) await player.play(fb.original, state.queue, { sourcePlaylistId: state.sourcePlaylistId });
     } finally {
       this.leaving = false;
     }

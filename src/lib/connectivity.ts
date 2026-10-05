@@ -1,15 +1,50 @@
 /**
  * Монитор интернет-соединения.
  * navigator.onLine врёт: «есть Wi-Fi» не значит «есть интернет». Поэтому, когда что-то идёт не так
- * (событие offline, зависший поток), мы дополнительно проверяем реальную связь лёгким запросом.
- * Запросы идут только в этих случаях и пока приложение считает, что связи нет, — в обычной работе трафика нет.
+ * (запуск приложения, событие offline, зависший поток), мы проверяем реальную связь лёгким запросом.
+ * После успешной проверки запрос повторяется только при потере связи или в ускоренном режиме восстановления.
  */
 
-const PROBES = ["https://www.gstatic.com/generate_204", "https://cp.cloudflare.com/generate_204"];
+const PROBE_PATH = "/connectivity.txt";
+const PROBE_BODY = "pocket-radio-online";
 const TIMEOUT = 4000;
+const MAX_PROBE_BYTES = 256;
+
+async function readProbeText(response: Response): Promise<string | null> {
+  const declaredSize = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_PROBE_BYTES) {
+    void response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!response.body) {
+    const text = await response.text();
+    return new TextEncoder().encode(text).byteLength <= MAX_PROBE_BYTES ? text : null;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > MAX_PROBE_BYTES) {
+        void reader.cancel().catch(() => undefined);
+        return null;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 class Connectivity {
-  private online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
+  // До проверки heartbeat не выдаём браузерный флаг за подтверждённый доступ в интернет.
+  private online = false;
   private fast = false;
   private listeners = new Set<() => void>();
   private inflight: Promise<boolean> | null = null;
@@ -25,6 +60,7 @@ class Connectivity {
     window.setInterval(() => {
       if (!this.online || this.fast) void this.probe();
     }, 6000);
+    void this.probe();
   }
 
   subscribe = (fn: () => void) => {
@@ -48,10 +84,8 @@ class Connectivity {
 
   /** Проверка настоящей связи. Возвращает true, если интернет доступен. */
   probe(): Promise<boolean> {
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      this.set(false);
-      return Promise.resolve(false);
-    }
+    // navigator.onLine может оставаться false после восстановления VPN или Wi-Fi;
+    // проверяем реальные endpoint-ы и не используем этот флаг как окончательный ответ.
     if (this.inflight) return this.inflight;
     this.inflight = this.run().finally(() => {
       this.inflight = null;
@@ -62,22 +96,27 @@ class Connectivity {
   private async run(): Promise<boolean> {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), TIMEOUT);
-    const ok = await new Promise<boolean>((resolve) => {
-      let pending = PROBES.length;
-      for (const url of PROBES) {
-        fetch(`${url}?t=${Date.now()}`, { mode: "no-cors", cache: "no-store", signal: ctl.signal })
-          .then(() => true)
-          .catch(() => false)
-          .then((good) => {
-            if (good) resolve(true);
-            else if (--pending === 0) resolve(false);
-          });
+    try {
+      const url = new URL(PROBE_PATH, location.origin);
+      url.searchParams.set("t", String(Date.now()));
+      const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
+      const finalUrl = new URL(res.url || url.href, url.href);
+      if (!res.ok || finalUrl.origin !== location.origin) {
+        void res.body?.cancel().catch(() => undefined);
+        this.set(false);
+        return false;
       }
-    });
-    clearTimeout(timer);
-    ctl.abort();
-    this.set(ok);
-    return ok;
+      const body = await readProbeText(res);
+      const ok = body !== null && body.trim() === PROBE_BODY;
+      this.set(ok);
+      return ok;
+    } catch {
+      this.set(false);
+      return false;
+    } finally {
+      clearTimeout(timer);
+      ctl.abort();
+    }
   }
 }
 

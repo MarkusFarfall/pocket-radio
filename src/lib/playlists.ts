@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { activeDbName, db, draftToStation, setSetting } from "./db";
+import { activeDbName, db, setSetting } from "./db";
+import { itemStationId, itemToStation, loadProgress } from "./playlistModel";
+export { itemStationId, itemToStation, loadProgress } from "./playlistModel";
 import { player } from "./player";
 import { connectivity } from "./connectivity";
 import { downloadVod, removeVod } from "./offline";
@@ -22,8 +24,6 @@ const PL = "pl:";
 const PP = "pp:";
 const coverMigrations = new Set<string>();
 
-/** Станция плеера, соответствующая треку (префикс отделяет треки плейлистов от каталога). */
-export const itemStationId = (itemId: string) => `pli:${itemId}`;
 export const localUrl = (itemId: string) => `https://local.pocket-radio.invalid/${encodeURIComponent(itemId)}`;
 
 /* ------------------------------------ хранилище ------------------------------------ */
@@ -192,39 +192,13 @@ export async function gcUnusedPlaylistAudio(extraItems: PlaylistItem[] = []): Pr
 
 /* ---------------------------------- прогресс по трекам ---------------------------------- */
 
-export async function loadProgress(itemIds: string[]): Promise<Map<string, number>> {
-  const rows = await db.settings.bulkGet(itemIds.map((id) => PP + itemStationId(id)));
-  const m = new Map<string, number>();
-  rows.forEach((r, i) => {
-    const v = r?.value;
-    if (typeof v === "number" && v > 0) m.set(itemIds[i], v);
-  });
-  return m;
-}
-
-// плеер сообщает позицию каждые несколько секунд — запоминаем, чтобы подкаст продолжился с того же места
+// Современный формат хранит время изменения для безопасного объединения прогресса между устройствами.
+// Старые числовые значения по-прежнему читаются в loadProgress и импортируются как legacy.
 player.setProgressSink((st, pos) => {
-  if (st.id.startsWith("pli:")) void setSetting(PP + st.id, Math.max(0, Math.floor(pos)));
+  if (st.id.startsWith("pli:")) void setSetting(PP + st.id, { position: Math.max(0, Math.floor(pos)), updatedAt: Date.now() });
 });
 
 /* ------------------------------------ преобразования ------------------------------------ */
-
-export function itemToStation(i: PlaylistItem, pos?: number): Station {
-  const s = draftToStation({
-    id: itemStationId(i.id),
-    name: i.title,
-    url: i.url,
-    kind: i.kind,
-    genre: i.genre ?? (i.kind === "vod" ? "Музыка" : ""),
-    city: i.subtitle ?? "",
-    tags: [],
-    icon: "",
-    note: i.note ?? "",
-    logo: i.logo,
-  });
-  if (pos) s.resumePos = pos;
-  return s;
-}
 
 export function stationToItem(s: Station): PlaylistItem {
   return {
@@ -282,7 +256,7 @@ export async function playPlaylist(pl: Playlist, o: { startId?: string; shuffle?
   const startSid = o.startId ? itemStationId(o.startId) : null;
   const start = (startSid && stations.find((s) => s.id === startSid)) || stations[0];
   player.pin(stations);
-  await player.play(start, stations.map((s) => s.id), o.fallback ? { fallback: o.fallback } : undefined);
+  await player.play(start, stations.map((s) => s.id), { fallback: o.fallback, sourcePlaylistId: pl.id });
 }
 
 /* ------------------------------------ скачивание офлайн ------------------------------------ */

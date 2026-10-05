@@ -56,6 +56,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // This heartbeat must always reach the network; a cached copy would misreport offline as online.
+  if (url.pathname === "/connectivity.txt") return;
   if (req.destination === "audio" || req.destination === "video" || req.headers.has("range")) return;
 
   if (req.mode === "navigate") {
