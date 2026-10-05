@@ -9,16 +9,20 @@ async function openCollections(page: Page) {
   await page.getByLabel("Раздел обзора").selectOption("collections");
 }
 
-async function archiveDocs(page: Page, docs: Record<string, unknown>[]) {
+type ArchiveDoc = Record<string, unknown>;
+
+async function archiveDocs(page: Page, docs: ArchiveDoc[] | ((query: string) => ArchiveDoc[])) {
   const queries: string[] = [];
   await page.route("https://archive.org/advancedsearch.php**", async (route) => {
     const url = new URL(route.request().url());
-    queries.push(url.searchParams.get("q") ?? "");
+    const query = url.searchParams.get("q") ?? "";
+    queries.push(query);
+    const responseDocs = typeof docs === "function" ? docs(query) : docs;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ response: { numFound: docs.length, docs } }),
+      body: JSON.stringify({ response: { numFound: responseDocs.length, docs: responseDocs } }),
     });
   });
   await page.route("https://archive.org/metadata/**", async (route) => {
@@ -44,7 +48,7 @@ test("artist search keeps A-ha results precise and drops noisy Archive metadata"
 
   await openCollections(page);
   await expect(page.getByRole("button", { name: "По исполнителю" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByPlaceholder("Например: a-ha, Talk Talk").fill("a-ha");
+  await page.getByPlaceholder("Например: Земфира, Михаил Круг, a-ha").fill("a-ha");
   await page.getByRole("button", { name: "Найти", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "«a-ha»" })).toBeVisible();
@@ -77,4 +81,91 @@ test("all-fields search uses an exact phrase rather than matching isolated words
   await expect(page.getByText("Talking Heads", { exact: true })).toHaveCount(0);
   expect(queries[0]).toContain('title:"Talk Talk"');
   expect(queries[0]).toContain('creator:"Talk Talk"');
+});
+
+test("artist search keeps Talk Talk creator matches ahead of title-only mentions", async ({ page }) => {
+  const docs: ArchiveDoc[] = Array.from({ length: 9 }, (_, index) => ({
+    identifier: `talk-talk-${index}`,
+    title: `Talk Talk album ${index + 1}`,
+    creator: "Talk Talk",
+    downloads: 100 - index,
+    collection: ["opensource_audio"],
+  }));
+  docs.push(
+    { identifier: "talk-talk-title-only", title: "Talk Talk", creator: "Various artists", downloads: 5000, collection: ["opensource_audio"] },
+    { identifier: "talk-talk-jamendo", title: "Talk Talk cover", creator: "Talk Talk", downloads: 9000, collection: ["jamendo-albums"] },
+  );
+  const queries = await archiveDocs(page, docs);
+
+  await openCollections(page);
+  await page.getByPlaceholder("Например: Земфира, Михаил Круг, a-ha").fill("Talk Talk");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "«Talk Talk»" })).toBeVisible();
+  await expect(page.getByText("Talk Talk album 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("Various artists", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Talk Talk cover", { exact: true })).toHaveCount(0);
+  expect(queries[0]).toContain('creator:"Talk Talk"');
+  expect(queries.some((query) => query.includes('title:"Talk Talk"'))).toBe(false);
+});
+
+test("smart artist search finds Zemfira variants and Mikhail Krug when creator metadata is missing", async ({ page }) => {
+  const zemfiraCyrillic: ArchiveDoc = {
+    identifier: "zemfira-creator-ru", title: "Хочешь", creator: "Земфира", downloads: 166, collection: ["opensource_audio"],
+  };
+  const zemfiraLatin: ArchiveDoc = {
+    identifier: "zemfira-creator-latin", title: "Beskonechnost", creator: "Zemfira", downloads: 104, collection: ["ourmedia"],
+  };
+  const zemfiraDemo: ArchiveDoc = {
+    identifier: "zemfira-demo", title: "Земфира — Демо 1998–1999", creator: "", downloads: 0, collection: ["opensource_audio"],
+  };
+  const zemfiraStory: ArchiveDoc = {
+    identifier: "zemfira-story-noise", title: "Рик Татьяна — Крыса Земфира — мутант", creator: "", downloads: 800, collection: ["audioboo_ru"],
+  };
+  const zemfiraJamendo: ArchiveDoc = {
+    identifier: "zemfira-jamendo-noise", title: "Zemfira cover", creator: "Dmitriy Kozhemyako", downloads: 900, collection: ["jamendo-albums"],
+  };
+  const krugDuets: ArchiveDoc = {
+    identifier: "mikhail-krug-duets", title: "Михаил Круг (Mikhail Krug) — Дуэты (2012)", creator: "", downloads: 5301, collection: ["folksoundomy_audio_y2k"],
+  };
+  const krugAlbum: ArchiveDoc = {
+    identifier: "mikhail-krug-central", title: "Михаил Круг — Владимирский централ", creator: "Master Sound", downloads: 96, collection: ["russian-post-soviet-cds"],
+  };
+  const krugStory: ArchiveDoc = {
+    identifier: "mikhail-krug-story-noise", title: "Михаил Круг рассказывает сказку", creator: "", downloads: 1000, collection: ["audioboo_ru"],
+  };
+
+  const queries = await archiveDocs(page, (query) => {
+    if (query.includes('creator:"Земфира"')) return [zemfiraCyrillic];
+    if (query.includes('creator:"Zemfira"')) return [zemfiraLatin];
+    if (query.includes('title:"Земфира"')) return [zemfiraCyrillic, zemfiraDemo, zemfiraStory, zemfiraJamendo];
+    if (query.includes('title:"Zemfira"')) return [zemfiraLatin, zemfiraJamendo];
+    if (query.includes('creator:"Михаил Круг"') || query.includes('creator:"Mikhail Krug"')) return [];
+    if (query.includes('title:"Михаил Круг"')) return [krugDuets, krugAlbum, krugStory];
+    if (query.includes('title:"Mikhail Krug"')) return [krugDuets];
+    return [];
+  });
+
+  await openCollections(page);
+  const input = page.getByPlaceholder("Например: Земфира, Михаил Круг, a-ha");
+  const find = page.getByRole("button", { name: "Найти", exact: true });
+
+  await input.fill("Земфира");
+  await find.click();
+  await expect(page.getByRole("heading", { name: "«Земфира»" })).toBeVisible();
+  await expect(page.getByText("Хочешь", { exact: true })).toBeVisible();
+  await expect(page.getByText("Beskonechnost", { exact: true })).toBeVisible();
+  await expect(page.getByText("Земфира — Демо 1998–1999", { exact: true })).toBeVisible();
+  await expect(page.getByText(/совпало в названии/).first()).toBeVisible();
+  await expect(page.getByText("Рик Татьяна — Крыса Земфира — мутант", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Zemfira cover", { exact: true })).toHaveCount(0);
+  expect(queries.some((query) => query.includes('creator:"Zemfira"'))).toBe(true);
+
+  await input.fill("Михаил Круг");
+  await find.click();
+  await expect(page.getByRole("heading", { name: "«Михаил Круг»" })).toBeVisible();
+  await expect(page.getByText("Михаил Круг (Mikhail Krug) — Дуэты (2012)", { exact: true })).toBeVisible();
+  await expect(page.getByText("Михаил Круг — Владимирский централ", { exact: true })).toBeVisible();
+  await expect(page.getByText("Михаил Круг рассказывает сказку", { exact: true })).toHaveCount(0);
+  expect(queries.some((query) => query.includes('title:"Mikhail Krug"'))).toBe(true);
 });

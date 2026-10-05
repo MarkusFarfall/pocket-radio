@@ -16,11 +16,14 @@ export interface Album {
   year: string;
   downloads: number;
   thumb: string;
+  /** Why a free-text search returned this item; preset collections leave it unset. */
+  match?: AlbumSearchMatch;
   /** Заполняется после быстрой проверки metadata: 1 = одиночная запись, >1 = сборник. */
   trackCount?: number;
   cover?: string;
 }
 
+export type AlbumSearchMatch = "artist" | "title" | "subject";
 export type AlbumSearchScope = "artist" | "all";
 
 export interface AlbumSearchPage {
@@ -82,16 +85,73 @@ export const COLLECTIONS: Collection[] = [
   { id: "war", group: "family", title: "Песни военных лет", desc: "Фронтовые и послевоенные песни", query: '(title:"песни военных лет" OR subject:"военные песни" OR subject:"world war ii songs")', hue: 80, glyph: "landmark" },
 ];
 
-/** Строит фразовый запрос: свободный текст больше не превращается в OR из отдельных слов. */
-export function textQuery(text: string, scope: AlbumSearchScope = "artist"): string {
-  const phrase = text
+type SearchField = "creator" | "title" | "subject";
+
+function cleanSearchPhrase(text: string): string {
+  return text
     .replace(/[\u0000-\u001f]/g, " ")
     .replace(/["\\]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!phrase) return "";
-  const quoted = `"${phrase}"`;
-  return scope === "artist" ? `creator:${quoted}` : `(creator:${quoted} OR title:${quoted} OR subject:${quoted})`;
+}
+
+function normalizeSearchText(value: string): string {
+  return fixText(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+const CYRILLIC_TO_LATIN: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh", з: "z",
+  и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
+  с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+};
+
+function transliterateCyrillicToLatin(value: string): string {
+  return value.replace(/[А-ЯЁа-яё]/g, (letter) => {
+    const lower = letter.toLowerCase();
+    const latin = CYRILLIC_TO_LATIN[lower];
+    if (latin === undefined) return letter;
+    return letter === lower || !latin ? latin : `${latin[0].toUpperCase()}${latin.slice(1)}`;
+  });
+}
+
+/** Original spelling plus a conservative Cyrillic-to-Latin alias for archive metadata. */
+function searchVariants(text: string): string[] {
+  const phrase = cleanSearchPhrase(text);
+  if (!phrase || !normalizeSearchText(phrase)) return [];
+
+  const candidates = [phrase];
+  if (/\p{Script=Cyrillic}/u.test(phrase)) {
+    const latin = transliterateCyrillicToLatin(phrase);
+    candidates.push(latin, latin.replace(/yo/gi, "e"));
+  }
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const normalized = normalizeSearchText(candidate);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+}
+
+function phraseQuery(variants: string[], fields: SearchField[]): string {
+  return `(${variants.flatMap((phrase) => fields.map((field) => `${field}:"${phrase}"`)).join(" OR ")})`;
+}
+
+/**
+ * Builds exact-phrase queries. Performer mode is smart: the service first checks creator,
+ * then can fall back to titles when Archive metadata omits the performer field.
+ */
+export function textQuery(text: string, scope: AlbumSearchScope = "artist"): string {
+  const variants = searchVariants(text);
+  if (!variants.length) return "";
+  return phraseQuery(variants, scope === "artist" ? ["creator", "title"] : ["creator", "title", "subject"]);
 }
 
 interface Doc {
@@ -106,7 +166,7 @@ interface Doc {
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? ""));
 
-function toAlbum(d: Doc): Album {
+function toAlbum(d: Doc, match?: AlbumSearchMatch): Album {
   return {
     id: d.identifier,
     title: fixText(one(d.title)) || d.identifier,
@@ -114,6 +174,7 @@ function toAlbum(d: Doc): Album {
     year: d.year ? String(d.year) : "",
     downloads: Number(d.downloads) || 0,
     thumb: `${BASE}/services/img/${encodeURIComponent(d.identifier)}`,
+    ...(match ? { match } : {}),
   };
 }
 
@@ -134,16 +195,7 @@ async function requestAlbumDocs(query: string, page: number, rows: number, signa
 
 export async function searchAlbums(query: string, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
   const { docs, total } = await requestAlbumDocs(query, page, SEARCH_PAGE_SIZE, signal);
-  return { albums: docs.map(toAlbum), hasMore: page * SEARCH_PAGE_SIZE < total };
-}
-
-function normalizeSearchText(value: string): string {
-  return fixText(value)
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+  return { albums: docs.map((doc) => toAlbum(doc)), hasMore: page * SEARCH_PAGE_SIZE < total };
 }
 
 function hasPhrase(value: string, phrase: string): boolean {
@@ -151,65 +203,166 @@ function hasPhrase(value: string, phrase: string): boolean {
   return !!field && (` ${field} `).includes(` ${phrase} `);
 }
 
-function artistCreatorMatch(value: string, phrase: string): boolean {
+function artistCreatorMatch(value: string, variants: string[]): boolean {
   const chunks = value.split(/[;,|/]+/).map(normalizeSearchText).filter(Boolean);
   if (chunks.length > 3) return false;
-  return chunks.some((chunk) => chunk === phrase || chunk.startsWith(`${phrase} `) || chunk === `the ${phrase}` || chunk.startsWith(`the ${phrase} `));
+  const phrases = variants.map(normalizeSearchText).filter(Boolean);
+  return chunks.some((chunk) => phrases.some((phrase) =>
+    chunk === phrase || chunk.startsWith(`${phrase} `) || chunk === `the ${phrase}` || chunk.startsWith(`the ${phrase} `),
+  ));
 }
 
-function matchesTextSearch(doc: Doc, phrase: string, scope: AlbumSearchScope): boolean {
-  const creator = one(doc.creator);
-  if (scope === "artist") {
-    const collections = one(doc.collection).toLowerCase().split(/[;,\s]+/);
-    // IA's imported Jamendo collection currently has many unrelated items misattributed to known artists.
-    if (collections.includes("jamendo-albums")) return false;
-    return artistCreatorMatch(creator, phrase);
+interface SearchHit {
+  doc: Doc;
+  match: AlbumSearchMatch;
+}
+
+interface SearchQuery {
+  query: string;
+  match: (doc: Doc) => AlbumSearchMatch | undefined;
+}
+
+const MATCH_WEIGHT: Record<AlbumSearchMatch, number> = { artist: 3, title: 2, subject: 1 };
+const SMART_ARTIST_FALLBACK_THRESHOLD = 8;
+
+function hasShortArtistToken(variants: string[]): boolean {
+  const particles = new Set(["and", "de", "da", "do", "el", "i", "la", "of", "the", "и"]);
+  return variants.some((variant) => normalizeSearchText(variant).split(" ").some((token) => token.length <= 2 && !particles.has(token)));
+}
+
+function artistCollectionTokens(doc: Doc): string[] {
+  return one(doc.collection).toLowerCase().split(/[;,\s]+/).filter(Boolean);
+}
+
+function isNoisyArtistSource(doc: Doc): boolean {
+  const collections = artistCollectionTokens(doc);
+  // These imported sets contain a disproportionate number of covers, spoken-word items, and unrelated matches.
+  return collections.some((name) =>
+    name === "jamendo-albums" || name.startsWith("podcasts") || name.startsWith("audiobook") || name.startsWith("audioboo"),
+  );
+}
+
+function artistFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
+  if (isNoisyArtistSource(doc)) return undefined;
+  if (artistCreatorMatch(one(doc.creator), variants)) return "artist";
+  return undefined;
+}
+
+function titleFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
+  if (isNoisyArtistSource(doc)) return undefined;
+  return variants.some((variant) => hasPhrase(one(doc.title), normalizeSearchText(variant))) ? "title" : undefined;
+}
+
+function anyFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
+  let best: AlbumSearchMatch | undefined;
+  for (const variant of variants) {
+    const phrase = normalizeSearchText(variant);
+    if (hasPhrase(one(doc.creator), phrase)) return "artist";
+    if (hasPhrase(one(doc.title), phrase) && (!best || MATCH_WEIGHT.title > MATCH_WEIGHT[best])) best = "title";
+    if (hasPhrase(one(doc.subject), phrase) && (!best || MATCH_WEIGHT.subject > MATCH_WEIGHT[best])) best = "subject";
   }
-  return [one(doc.title), creator, one(doc.subject)].some((field) => hasPhrase(field, phrase));
+  return best;
 }
 
-function textRelevance(doc: Doc, phrase: string): number {
-  const creator = one(doc.creator);
-  const collections = one(doc.collection).toLowerCase().split(/[;,\s]+/);
-  if (!collections.includes("jamendo-albums") && artistCreatorMatch(creator, phrase)) return 3;
-  if (hasPhrase(one(doc.title), phrase)) return 2;
-  if (hasPhrase(creator, phrase)) return 1.5;
-  return 1;
+function sortSearchHits(hits: SearchHit[]): SearchHit[] {
+  return hits.sort((a, b) =>
+    MATCH_WEIGHT[b.match] - MATCH_WEIGHT[a.match] ||
+    (Number(b.doc.downloads) || 0) - (Number(a.doc.downloads) || 0) ||
+    one(a.doc.title).localeCompare(one(b.doc.title)),
+  );
 }
 
-/** Точный поиск пользовательской фразы с клиентской проверкой шумных метаданных IA. */
-export async function searchTextAlbums(text: string, scope: AlbumSearchScope, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
-  const query = textQuery(text, scope);
-  const phrase = normalizeSearchText(text);
-  if (!query || !phrase) return { albums: [], hasMore: false };
+async function collectSearchHits(
+  queries: SearchQuery[],
+  needed: number,
+  signal?: AbortSignal,
+  initial: SearchHit[] = [],
+): Promise<{ hits: SearchHit[]; exhausted: boolean }> {
+  const byId = new Map<string, SearchHit>();
+  for (const hit of initial) byId.set(hit.doc.identifier, hit);
 
-  const matched: Doc[] = [];
-  const seen = new Set<string>();
-  let rawPage = 1;
-  let total = 0;
-  let exhausted = false;
-  const needed = page * SEARCH_PAGE_SIZE + 1;
-
-  while (matched.length < needed && rawPage <= MAX_SEARCH_BATCHES) {
-    const result = await requestAlbumDocs(query, rawPage, SEARCH_BATCH_SIZE, signal);
-    total = result.total;
-    for (const doc of result.docs) {
-      if (seen.has(doc.identifier) || !matchesTextSearch(doc, phrase, scope)) continue;
-      seen.add(doc.identifier);
-      matched.push(doc);
-    }
-    if (result.docs.length < SEARCH_BATCH_SIZE || rawPage * SEARCH_BATCH_SIZE >= total) {
-      exhausted = true;
+  let exhausted = true;
+  for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
+    if (byId.size >= needed) {
+      exhausted = false;
       break;
     }
-    rawPage += 1;
+
+    const search = queries[queryIndex];
+    let rawPage = 1;
+    let queryExhausted = false;
+
+    while (rawPage <= MAX_SEARCH_BATCHES) {
+      const result = await requestAlbumDocs(search.query, rawPage, SEARCH_BATCH_SIZE, signal);
+      for (const doc of result.docs) {
+        const match = search.match(doc);
+        if (!match) continue;
+        const previous = byId.get(doc.identifier);
+        if (!previous || MATCH_WEIGHT[match] > MATCH_WEIGHT[previous.match]) byId.set(doc.identifier, { doc, match });
+      }
+
+      const reachedEnd = result.docs.length < SEARCH_BATCH_SIZE || rawPage * SEARCH_BATCH_SIZE >= result.total;
+      if (reachedEnd) {
+        queryExhausted = true;
+        break;
+      }
+      if (byId.size >= needed) break;
+      rawPage += 1;
+    }
+
+    if (!queryExhausted) {
+      exhausted = false;
+      break;
+    }
+    if (byId.size >= needed) {
+      if (queryIndex < queries.length - 1) exhausted = false;
+      break;
+    }
   }
 
-  if (scope === "all") matched.sort((a, b) => textRelevance(b, phrase) - textRelevance(a, phrase) || (Number(b.downloads) || 0) - (Number(a.downloads) || 0));
+  return { hits: [...byId.values()], exhausted };
+}
+
+/** Exact phrase search: performer first, title fallback for incomplete IA creator metadata. */
+export async function searchTextAlbums(text: string, scope: AlbumSearchScope, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
+  const variants = searchVariants(text);
+  if (!variants.length) return { albums: [], hasMore: false };
+
+  const needed = page * SEARCH_PAGE_SIZE + 1;
+  let collected: { hits: SearchHit[]; exhausted: boolean };
+
+  if (scope === "artist") {
+    const performerQueries = variants.map((variant) => ({
+      query: phraseQuery([variant], ["creator"]),
+      match: (doc: Doc) => artistFieldMatch(doc, [variant]),
+    }));
+    const performers = await collectSearchHits(performerQueries, needed, signal);
+    collected = performers;
+
+    // Keep creator matches clean (notably for short/ambiguous names such as a-ha). Only broaden
+    // when metadata is sparse; title hits stay behind performer hits and are identified in the UI.
+    const shortNameAlreadyMatched = performers.hits.length > 0 && hasShortArtistToken(variants);
+    if (performers.hits.length < SMART_ARTIST_FALLBACK_THRESHOLD && !shortNameAlreadyMatched) {
+      const titleQueries = variants.map((variant) => ({
+        query: phraseQuery([variant], ["title"]),
+        match: (doc: Doc) => titleFieldMatch(doc, [variant]),
+      }));
+      const titles = await collectSearchHits(titleQueries, needed, signal, performers.hits);
+      collected = { hits: titles.hits, exhausted: performers.exhausted && titles.exhausted };
+    }
+  } else {
+    const allFields: SearchQuery = {
+      query: phraseQuery(variants, ["creator", "title", "subject"]),
+      match: (doc) => anyFieldMatch(doc, variants),
+    };
+    collected = await collectSearchHits([allFields], needed, signal);
+  }
+
+  const ranked = sortSearchHits(collected.hits);
   const start = (page - 1) * SEARCH_PAGE_SIZE;
   return {
-    albums: matched.slice(start, start + SEARCH_PAGE_SIZE).map(toAlbum),
-    hasMore: matched.length > start + SEARCH_PAGE_SIZE || !exhausted || rawPage * SEARCH_BATCH_SIZE < total,
+    albums: ranked.slice(start, start + SEARCH_PAGE_SIZE).map(({ doc, match }) => toAlbum(doc, match)),
+    hasMore: ranked.length > start + SEARCH_PAGE_SIZE || !collected.exhausted,
   };
 }
 

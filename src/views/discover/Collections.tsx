@@ -49,7 +49,11 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
       <AlbumCover album={{ ...album, cover: info?.cover }} size={48} />
       <span className="min-w-0 flex-1">
         <span className="line-clamp-2 text-[15px] font-semibold leading-snug">{album.title}</span>
-        <span className="block truncate text-xs text-muted">{[album.creator, album.year].filter(Boolean).join(" · ") || "Автор не указан"}</span>
+        <span className="block truncate text-xs text-muted">
+          {[album.creator, album.year].filter(Boolean).join(" · ") || "Автор не указан"}
+          {album.match === "title" && <span className="text-accent"> · совпало в названии</span>}
+          {album.match === "subject" && <span className="text-accent"> · совпало в темах</span>}
+        </span>
       </span>
       <span className="shrink-0 sm:min-w-[7.5rem]">
         {info === null ? (
@@ -360,7 +364,7 @@ export function Collections({ online }: { online: boolean }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder={scope === "artist" ? "Например: a-ha, Talk Talk" : "Название альбома, песни или жанр"}
+            placeholder={scope === "artist" ? "Например: Земфира, Михаил Круг, a-ha" : "Название альбома, песни или жанр"}
           />
           {text && (
             <button onClick={() => setText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
@@ -374,7 +378,7 @@ export function Collections({ online }: { online: boolean }) {
       </div>
       <p className="text-xs leading-relaxed text-muted">
         {scope === "artist"
-          ? "Точное совпадение по исполнителю; шумные импортные подборки отсекаются."
+          ? "Сначала ищем точного исполнителя и варианты латиницей; при неполных метаданных расширяем поиск по названию."
           : "Ищем точную фразу в исполнителе, названии и темах."}
       </p>
     </div>
@@ -464,9 +468,9 @@ export function Collections({ online }: { online: boolean }) {
               <div className="p-10 text-center text-sm text-muted">
                 {active.text && active.scope === "artist" ? (
                   <>
-                    <p>Точного совпадения по исполнителю не найдено.</p>
+                    <p>Совпадений по исполнителю и названию не найдено.</p>
                     <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>
-                      Искать по названию и жанру
+                      Искать по всем полям
                     </button>
                   </>
                 ) : (
