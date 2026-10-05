@@ -148,6 +148,7 @@ export function Packs({ have, onPlay }: { have: Set<string>; onPlay: ViewProps["
         onClose={() => setOpen(null)}
         items={items}
         have={have}
+        sourceContext={open ? { kind: "collection", title: open.title } : undefined}
         onPlay={onPlay}
         header={
           open && (

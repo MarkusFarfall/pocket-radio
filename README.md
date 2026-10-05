@@ -18,6 +18,11 @@ Supabase Auth (REST без SDK).
 Прод: проект Vercel `pocket-radio`, **Root Directory** = `projects/pocket-radio`,
 пуш в `main` деплоится автоматически.
 
+Поиск Radio Garden обращается к его неофициальному API через same-origin-функцию
+`api/radio-garden/search.ts`: браузерные запросы напрямую блокируются CORS. В локальной
+разработке и `vite preview` тот же маршрут проксируется конфигурацией Vite. На другом
+хостинге нужен эквивалентный серверный прокси.
+
 ## Что умеет
 
 | Раздел | Содержимое |

@@ -304,7 +304,7 @@ class Resilience {
       if (fb?.kind === "ambient") ambient.stop(1.2);
       player.leaveFallback("paused");
       if (fb?.manual) player.stop();
-      else if (resume && fb?.original) await player.play(fb.original, state.queue, { sourcePlaylistId: state.sourcePlaylistId });
+      else if (resume && fb?.original) await player.play(fb.original, state.queue, { sourcePlaylistId: state.sourcePlaylistId, sourceContext: state.sourceContext });
     } finally {
       this.leaving = false;
     }

@@ -3,7 +3,7 @@ import { ChevronRight, FileUp, Keyboard, MoreHorizontal, Plus, Wifi, WifiOff } f
 import type { Draft, Station } from "./lib/types";
 import { useOfflineItems, useOnline, useStations } from "./lib/hooks";
 import { reconcileOfflineCache } from "./lib/offline";
-import { player, usePlayer } from "./lib/player";
+import { player, usePlayer, type PlayerSourceContext } from "./lib/player";
 import { hueOf, parseShare } from "./lib/templates";
 import { toast } from "./lib/toast";
 import { getAppPrefs } from "./lib/appPrefs";
@@ -159,10 +159,13 @@ export default function App() {
     setPlayerOpen(false);
   };
 
-  const onPlay = useCallback((s: Station, queue: string[]) => {
+  const onPlay = useCallback((s: Station, queue: string[], sourceContext?: PlayerSourceContext) => {
+    if (sourceContext) setPlayerOpen(true);
     const cur = player.getState();
-    if (cur.station?.id === s.id && cur.status !== "error" && cur.status !== "idle") player.toggle();
-    else void player.play(s, queue);
+    if (cur.station?.id === s.id && cur.status !== "error" && cur.status !== "idle") {
+      if (sourceContext) player.updateSourceContext(sourceContext, queue);
+      player.toggle();
+    } else void player.play(s, queue, { sourceContext });
   }, []);
 
   const onScanned = useCallback(

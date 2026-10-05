@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Headphones, Loader2, MapPin, Plus, RefreshCw, Search as SearchIcon, SlidersHorizontal, ThumbsUp, WifiOff, X } from "lucide-react";
+import { ExternalLink, Headphones, Loader2, MapPin, Plus, RefreshCw, Search as SearchIcon, SlidersHorizontal, ThumbsUp, WifiOff, X } from "lucide-react";
 import type { Station } from "../../lib/types";
 import type { ViewProps } from "../shared";
 import { addMany, draftToStation } from "../../lib/db";
@@ -24,16 +24,15 @@ import { cn } from "../../utils/cn";
 import { Chip, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 import { KindIcon } from "../../components/kind";
 import { StationItem } from "../../components/StationItem";
+import { GARDEN_IDEAS, stationCategoryOptions, stationTagLabel, type CategoryOption } from "../../lib/stationCategories";
 
 type Source = "rb" | "soma" | "garden";
 const SOURCES: { id: Source; label: string; hint: string }[] = [
   { id: "rb", label: "Radio Browser", hint: "Общий каталог: десятки тысяч станций со всего мира" },
   { id: "soma", label: "SomaFM", hint: "Независимое радио из Сан-Франциско — актуальный список каналов с числом слушателей" },
-  { id: "garden", label: "Radio Garden", hint: "Поиск по названию в каталоге radio.garden" },
+  { id: "garden", label: "Radio Garden", hint: "Поиск по станции или месту через каталог Radio Garden" },
 ];
 
-const QUICK_TAGS = ["jazz", "lofi", "ambient", "classical", "rock", "electronic", "pop", "indie", "80s", "90s", "news", "talk", "hip hop", "metal", "reggae", "chillout", "dance", "podcast"];
-const GARDEN_IDEAS = ["jazz", "bbc", "radio one", "classic", "chill", "rock", "news", "love", "lounge", "ibiza"];
 const PAGE = 30;
 
 function fmtNum(n: number) {
@@ -114,7 +113,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
           paged = true;
         } else if (source === "soma") {
           r = await somaChannels();
-        } else if (dq) {
+        } else if (dq.length >= 2) {
           r = await gardenSearch(dq, c.signal);
         }
         setItems((prev) => (offset ? [...prev, ...r.filter((x) => !prev.some((p) => p.url === x.url))] : r));
@@ -122,7 +121,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
       } catch (e) {
         if (c.signal.aborted) return;
         const msg = e instanceof Error ? e.message : "Не удалось загрузить";
-        setError(source === "garden" && /fetch|network/i.test(msg) ? "Radio Garden не отвечает из браузера (сервер может не разрешать запросы с других сайтов). Попробуйте Radio Browser." : msg);
+        setError(source === "garden" && /fetch|network/i.test(msg) ? "Не удалось связаться с сервером Radio Garden. Проверьте сеть или откройте сайт каталога." : msg);
       } finally {
         if (!c.signal.aborted) setLoading(false);
       }
@@ -149,15 +148,19 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
     player.setEphemeral(stations);
   }, [stations]);
 
-  const chips = useMemo(() => {
+  const chips = useMemo<CategoryOption[]>(() => {
     if (source === "soma") {
-      const m = new Map<string, number>();
-      items.forEach((f) => (f.tags ?? []).slice(1).forEach((t) => m.set(t, (m.get(t) ?? 0) + 1)));
-      return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 14).map((x) => x[0]);
+      const counts = new Map<string, number>();
+      items.forEach((f) => (f.tags ?? []).slice(1).forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1)));
+      return [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 24)
+        .map(([value]) => ({ value, label: stationTagLabel(value) }))
+        .filter((option): option is CategoryOption => !!option.label)
+        .slice(0, 14);
     }
     if (source === "garden") return GARDEN_IDEAS;
-    const fromApi = tags.slice(0, 40).map((t) => t.name);
-    return (fromApi.length ? [...QUICK_TAGS, ...fromApi.filter((t) => !QUICK_TAGS.includes(t))] : QUICK_TAGS).slice(0, 48);
+    return stationCategoryOptions(tags.map((t) => t.name));
   }, [source, items, tags]);
 
   const addOne = async (s: Station, f: Found) => {
@@ -171,8 +174,14 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
     toast(n ? `Добавлено станций: ${n}` : "Всё уже в каталоге", "ok");
   };
 
-  const activeFilters = [country && countryName(country), language && (languages.find((l) => l.value === language)?.label ?? language), codec, minBr ? `${minBr}+ кбит/с` : ""].filter(Boolean) as string[];
+  const activeFilters: { id: string; label: string; clear: () => void }[] = [];
+  if (tag) activeFilters.push({ id: "tag", label: stationTagLabel(tag) ?? tag, clear: () => setTag("") });
+  if (country) activeFilters.push({ id: "country", label: countryName(country), clear: () => setCountry("") });
+  if (language) activeFilters.push({ id: "language", label: languages.find((l) => l.value === language)?.label ?? language, clear: () => setLanguage("") });
+  if (codec) activeFilters.push({ id: "codec", label: codec, clear: () => setCodec("") });
+  if (minBr) activeFilters.push({ id: "bitrate", label: `${minBr}+ кбит/с`, clear: () => setMinBr(0) });
   const resetFilters = () => {
+    setTag("");
     setCountry("");
     setLanguage("");
     setCodec("");
@@ -201,6 +210,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
             <button
               key={s.id}
               onClick={() => setSource(s.id)}
+              aria-pressed={source === s.id}
               className={cn("rounded-xl border p-3 text-left transition", source === s.id ? "border-accent bg-accent/10" : "border-line hover:border-ink/30")}
             >
               <span className="block text-sm font-semibold">{s.label}</span>
@@ -215,10 +225,12 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
             <SearchIcon size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
             <input
               data-search
+              aria-label={source === "garden" ? "Название станции или место" : "Поиск радиостанций"}
+              maxLength={100}
               className={cn(inputCls, "pl-10")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={source === "garden" ? "Название станции или города" : "Название станции: jazz, Europa, BBC…"}
+              placeholder={source === "garden" ? "Станция или город" : "Название станции: Jazz FM, Europa, BBC…"}
             />
             {q && (
               <button onClick={() => setQ("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
@@ -280,14 +292,20 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
 
         {source === "rb" && (activeFilters.length > 0 || (region && !country && countries.some((c) => c.code === region))) && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            {activeFilters.map((f) => (
-              <span key={f} className="rounded-md bg-accent/12 px-2 py-1 font-semibold text-accent">
-                {f}
-              </span>
+            {activeFilters.map((filter) => (
+              <button
+                key={filter.id}
+                onClick={filter.clear}
+                aria-label={`Удалить фильтр: ${filter.label}`}
+                title={`Убрать фильтр «${filter.label}»`}
+                className="inline-flex min-h-7 items-center gap-1.5 rounded-full bg-accent/12 px-2.5 py-1 font-semibold text-accent transition hover:bg-accent/20"
+              >
+                {filter.label}<X size={12} aria-hidden="true" />
+              </button>
             ))}
             {activeFilters.length > 0 && (
-              <button onClick={resetFilters} className="font-semibold text-muted underline underline-offset-2">
-                сбросить
+              <button onClick={resetFilters} className="rounded-md px-1.5 py-1 font-semibold text-muted underline underline-offset-2">
+                сбросить всё
               </button>
             )}
             {region && !country && countries.some((c) => c.code === region) && (
@@ -300,13 +318,13 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
 
         <label className="block md:hidden">
           <select
-            value={source === "garden" ? (GARDEN_IDEAS.includes(dq) ? dq : "") : tag}
+            value={source === "garden" ? (chips.some((category) => category.value === dq) ? dq : "") : tag}
             onChange={(e) => source === "garden" ? setQ(e.target.value) : setTag(e.target.value)}
             className={inputCls + " cursor-pointer !py-2"}
             aria-label="Жанр или тема"
           >
             <option value="">{source === "soma" ? "Все каналы" : source === "garden" ? "Любая тема" : "Все жанры"}</option>
-            {chips.map((t) => <option key={t} value={t}>{t}</option>)}
+            {chips.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
           </select>
         </label>
         <div className="no-scrollbar hidden gap-1.5 overflow-x-auto pb-0.5 md:flex">
@@ -315,16 +333,16 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
               {source === "soma" ? "Все каналы" : "Все жанры"}
             </Chip>
           )}
-          {chips.map((t) => (
+          {chips.map((category) => (
             <Chip
-              key={t}
-              active={source === "garden" ? dq === t : tag === t}
+              key={category.value}
+              active={source === "garden" ? dq === category.value : tag === category.value}
               onClick={() => {
-                if (source === "garden") setQ(dq === t ? "" : t);
-                else setTag(tag === t ? "" : t);
+                if (source === "garden") setQ(dq === category.value ? "" : category.value);
+                else setTag(tag === category.value ? "" : category.value);
               }}
             >
-              {t}
+              {category.label}
             </Chip>
           ))}
         </div>
@@ -345,9 +363,20 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
       </div>
 
       {error && (
-        <div className="flex items-center gap-3 rounded-xl bg-bad/10 p-4 text-sm text-bad">
+        <div className="flex flex-col gap-2 rounded-xl bg-bad/10 p-4 text-sm text-bad sm:flex-row sm:items-center">
           <span className="flex-1">{error}</span>
-          <button onClick={() => setNonce((n) => n + 1)} className="shrink-0 font-semibold underline">
+          {source === "garden" && (
+            <a
+              href="https://radio.garden/search"
+              target="_blank"
+              rel="noopener noreferrer"
+              title={dq ? `Откройте поиск Radio Garden и введите «${dq}»` : "Открыть поиск Radio Garden"}
+              className="inline-flex shrink-0 items-center gap-1.5 font-semibold underline underline-offset-2"
+            >
+              <ExternalLink size={14} /> Открыть Radio Garden
+            </a>
+          )}
+          <button onClick={() => setNonce((n) => n + 1)} className="shrink-0 self-start font-semibold underline sm:self-auto">
             Повторить
           </button>
         </div>
@@ -387,7 +416,32 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
           );
         })}
         {!loading && !error && stations.length === 0 && (
-          <div className="p-10 text-center text-sm text-muted">{source === "garden" && !dq ? "Введите название станции или выберите тему выше." : "Ничего не найдено. Попробуйте другой запрос или сбросьте фильтры."}</div>
+          <div className="p-8 text-center text-sm text-muted">
+            <p>
+              {source === "garden" && !dq
+                ? "Введите станцию или город либо выберите тему выше."
+                : source === "garden" && dq.length < 2
+                  ? "Введите ещё хотя бы один символ для поиска."
+                  : "Ничего не найдено. Измените запрос или ослабьте фильтры."}
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {source === "rb" && activeFilters.length > 0 && (
+                <button onClick={resetFilters} className="rounded-full bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-accent/10 hover:text-accent">
+                  Снять фильтры
+                </button>
+              )}
+              {source !== "garden" && tag && (
+                <button onClick={() => setTag("")} className="rounded-full bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-accent/10 hover:text-accent">
+                  Снять категорию
+                </button>
+              )}
+              {dq && (
+                <button onClick={() => setQ("")} className="rounded-full bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-accent/10 hover:text-accent">
+                  {source === "soma" ? "Показать все каналы" : "Очистить запрос"}
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

@@ -185,6 +185,23 @@ async function offlineState(page: Page) {
   });
 }
 
+test("FullPlayer returns to an unsaved album track list", async ({ page }) => {
+  await mockArchive(page, "unsaved-return-fixture", "Fixture jazz album", [
+    { file: "01 - unsaved.mp3", title: "Unsaved Track", seconds: 20, frequency: 440 },
+    { file: "02 - next.mp3", title: "Next Track", seconds: 20, frequency: 660 },
+  ]);
+  await openAsGuest(page);
+  await openFixtureAlbum(page);
+
+  await page.getByRole("button", { name: 'Включить «Unsaved Track»' }).click();
+  const returnButton = page.getByRole("button", { name: "Вернуться к альбому" });
+  await expect(returnButton).toBeVisible();
+  await returnButton.click();
+
+  await expect(page.getByRole("button", { name: "Выбрать треки", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: 'Включить «Unsaved Track»' })).toBeVisible();
+});
+
 test("downloaded collection tracks play from cache offline and advance in queue", async ({ page, context }) => {
   await mockArchive(page, "offline-fixture", "Fixture jazz album", [
     { file: "01 - track-one.mp3", title: "Track One", seconds: 3, frequency: 440 },
@@ -401,8 +418,8 @@ test("local and online search modes remain distinct and usable", async ({ page }
   await page.route("https://somafm.com/channels.json", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ channels: [{ id: "fixture", title: "Fixture Jazz Channel", description: "Test channel", genre: "jazz|ambient", image: "", largeimage: "", listeners: "123", playlists: [{ url: "https://somafm.com/fixture.pls", format: "mp3", quality: "high" }] }] }) })
   );
-  await page.route("https://radio.garden/api/search**", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", headers: { "Access-Control-Allow-Origin": "*" }, body: JSON.stringify({ hits: { hits: [{ _source: { code: "DE", page: { url: "/listen/fixture123", type: "channel", title: "Fixture Garden Jazz", subtitle: "Frankfurt" } } }] } }) })
+  await page.route("**/api/radio-garden/search**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ hits: { hits: [{ _source: { code: "DE", page: { url: "/listen/fixture123", type: "channel", title: "Fixture Garden Jazz", subtitle: "Frankfurt" } } }] } }) })
   );
   await page.route("https://itunes.apple.com/**", async (route) => {
     const url = new URL(route.request().url());
@@ -459,4 +476,15 @@ test("local and online search modes remain distinct and usable", async ({ page }
   await page.locator("input[data-search]").fill("Германия");
   await page.getByRole("button", { name: /Германия/ }).click();
   await expect(page.getByText("Fixture M3U Station")).toBeVisible({ timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Послушать Fixture M3U Station" }).click();
+  const returnButton = page.getByRole("button", { name: "Вернуться к плейлисту" });
+  await expect(returnButton).toBeVisible();
+  await returnButton.click();
+  await expect(page.getByRole("heading", { name: "Германия" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Слушать", exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await page.getByRole("button", { name: "Открыть плеер", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Вернуться к плейлисту" })).toHaveCount(0);
 });

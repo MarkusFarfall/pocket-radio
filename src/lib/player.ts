@@ -17,6 +17,12 @@ export interface Meta {
   artist?: string;
 }
 
+/** Volatile source-list context; unlike saved playlist ids, it is not persisted. */
+export interface PlayerSourceContext {
+  kind: "playlist" | "album" | "collection";
+  title: string;
+}
+
 export interface TrackEntry {
   title: string;
   artist?: string;
@@ -41,8 +47,10 @@ export interface PlayerState {
   history: TrackEntry[];
   /** режим «нет интернета»: играет эмбиент или офлайн-станция вместо эфира */
   fallback: FallbackInfo | null;
-  /** Плейлист, из которого запущен трек; нужен для быстрого возврата из полноэкранного плеера. */
+  /** Сохранённый плейлист, из которого запущен трек; используется для прямого перехода по id. */
   sourcePlaylistId: string | null;
+  /** Контекст открытого списка/альбома до его сохранения; живёт только в текущей сессии. */
+  sourceContext: PlayerSourceContext | null;
 }
 
 export interface TimeState {
@@ -113,6 +121,7 @@ class Engine {
       history: [],
       fallback: null,
       sourcePlaylistId: null,
+      sourceContext: null,
     };
     const a = this.audio;
     a.preload = "none";
@@ -236,7 +245,7 @@ class Engine {
       } else if (fresh !== cur) {
         const urlChanged = fresh.url !== cur.url;
         this.set({ station: fresh });
-        if (urlChanged && this.state.status === "playing") void this.play(fresh, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId });
+        if (urlChanged && this.state.status === "playing") void this.play(fresh, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId, sourceContext: this.state.sourceContext });
         else this.updateMediaSession();
       }
     }
@@ -251,6 +260,16 @@ class Engine {
     ]);
     let queue = Array.isArray(savedQueue) ? savedQueue.filter((x): x is string => typeof x === "string") : [];
     let sourcePlaylistId = savedPlaylistId;
+    let sourceContext: PlayerSourceContext | null = null;
+    if (sourcePlaylistId) {
+      try {
+        const row = await db.settings.get(`pl:${sourcePlaylistId}`);
+        const playlist = row?.value as Playlist | undefined;
+        if (playlist?.id === sourcePlaylistId) sourceContext = { kind: "playlist", title: playlist.name };
+      } catch {
+        // Старый или удалённый плейлист не должен мешать восстановлению станции.
+      }
+    }
     let st = id ? this.catalog.get(id) : undefined;
 
     // Плейлистовые станции (`pli:*`) не входят в каталог, поэтому их нужно собрать из сохранённого плейлиста.
@@ -273,6 +292,7 @@ class Engine {
             queue = validQueue.length ? validQueue : stations.map((item) => item.id);
             if (!queue.includes(id)) queue = [id, ...queue];
             sourcePlaylistId = playlist.id;
+            sourceContext = { kind: "playlist", title: playlist.name };
           }
         }
       } catch {
@@ -283,14 +303,16 @@ class Engine {
     if (st && !this.state.station) {
       if (!queue.includes(st.id)) queue = [st.id, ...queue];
       this.audio.muted = false;
-      this.set({ station: st, status: "paused", isLive: st.kind !== "vod", queue, sourcePlaylistId });
+      this.set({ station: st, status: "paused", isLive: st.kind !== "vod", queue, sourcePlaylistId, sourceContext });
       this.setTime({ position: st.resumePos ?? 0, duration: 0 });
       this.updateMediaSession();
     }
   }
 
   /* ------------------------------ управление ------------------------------ */
-  async play(station: Station, queue?: string[], opts?: { fallback?: FallbackInfo; sourcePlaylistId?: string | null }) {
+  async play(station: Station, queue?: string[], opts?: { fallback?: FallbackInfo; sourcePlaylistId?: string | null; sourceContext?: PlayerSourceContext | null }) {
+    const sourcePlaylistId = opts?.sourcePlaylistId ?? null;
+    const sourceContext: PlayerSourceContext | null = opts?.sourceContext ?? (sourcePlaylistId ? { kind: "playlist", title: "Плейлист" } : null);
     this.wantsPlayback = true;
     // «разбудить» звук прямо в обработчике нажатия — на iOS иначе эмбиент потом не запустится
     ambient.prime();
@@ -312,7 +334,8 @@ class Engine {
       queue: q.includes(station.id) ? q : [station.id, ...q],
       fromCache: false,
       fallback: opts?.fallback ?? null,
-      sourcePlaylistId: opts?.sourcePlaylistId ?? null,
+      sourcePlaylistId,
+      sourceContext,
     });
     this.setTime({ position: station.resumePos ?? 0, duration: 0 });
     const rate = station.kind === "vod" ? this.state.rate : 1;
@@ -380,7 +403,7 @@ class Engine {
     this.wantsPlayback = true;
     this.hiddenWhilePlaying = false;
     if (this.state.isLive || !this.audio.src) {
-      await this.play(st, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId });
+      await this.play(st, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId, sourceContext: this.state.sourceContext });
     } else {
       try {
         await this.audio.play();
@@ -415,6 +438,7 @@ class Engine {
       fromCache: false,
       meta: { title: info.title, artist: info.manual ? "Pocket Radio" : "Нет интернета" },
       sourcePlaylistId: info.manual ? null : this.state.sourcePlaylistId,
+      sourceContext: info.manual ? null : this.state.sourceContext,
     });
     this.setTime({ position: 0, duration: 0 });
     this.updateMediaSession();
@@ -434,7 +458,7 @@ class Engine {
     void this.closeTrack();
     this.audio.pause();
     this.teardownSource();
-    this.set({ station: null, status: "idle", meta: null, error: null, fallback: null, sourcePlaylistId: null });
+    this.set({ station: null, status: "idle", meta: null, error: null, fallback: null, sourcePlaylistId: null, sourceContext: null });
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = "none";
@@ -451,7 +475,21 @@ class Engine {
     if (!ids.length) return;
     const i = ids.indexOf(station.id);
     const next = this.lookup(ids[(i + dir + ids.length) % ids.length]);
-    if (next && next.id !== station.id) void this.play(next, queue, { sourcePlaylistId: this.state.sourcePlaylistId });
+    if (next && next.id !== station.id) void this.play(next, queue, { sourcePlaylistId: this.state.sourcePlaylistId, sourceContext: this.state.sourceContext });
+  }
+
+  /** Update the return target without restarting when the current track is selected from another open list. */
+  updateSourceContext(sourceContext: PlayerSourceContext, queue: string[]) {
+    const currentId = this.state.station?.id;
+    const nextQueue = currentId && !queue.includes(currentId) ? [currentId, ...queue] : queue;
+    this.set({ sourcePlaylistId: null, sourceContext, queue: nextQueue });
+    void setSetting("lastQueue", nextQueue);
+    void setSetting("lastSourcePlaylistId", null);
+  }
+
+  clearSourceContext(sourceContext: PlayerSourceContext) {
+    if (this.state.sourcePlaylistId || this.state.sourceContext?.kind !== sourceContext.kind || this.state.sourceContext.title !== sourceContext.title) return;
+    this.set({ sourceContext: null });
   }
 
   toggleMute() {

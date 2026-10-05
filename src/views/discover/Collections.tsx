@@ -1,17 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Disc3, Download, FileAudio, ListMusic, ListPlus, Loader2, Pause, Play, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
 import type { PlaylistItem } from "../../lib/types";
+import type { ViewProps } from "../shared";
 import { COLLECTIONS, COLLECTION_GROUPS, albumTracks, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope } from "../../lib/archive";
 import { GLYPHS } from "../../lib/glyphs";
 import { createPlaylist, downloadItems, itemStationId, itemToStation } from "../../lib/playlists";
 import { gotoPlaylist, openPicker } from "../../lib/picker";
-import { player, usePlayer } from "../../lib/player";
+import { player, usePlayer, type PlayerSourceContext } from "../../lib/player";
 import { fmtClock } from "../../lib/templates";
 import { toast } from "../../lib/toast";
 import { cn } from "../../utils/cn";
 import { Cover, Equalizer, Modal, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 
 const fmtNum = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+const QUICK_OFFLINE_SEARCHES = {
+  artist: [
+    { query: "a-ha", label: "a-ha" },
+    { query: "Кино", label: "Кино" },
+    { query: "Михаил Круг", label: "Михаил Круг" },
+    { query: "Talk Talk", label: "Talk Talk" },
+  ],
+  all: [
+    { query: "jazz", label: "Джаз" },
+    { query: "classical", label: "Классика" },
+    { query: "ambient", label: "Эмбиент" },
+    { query: "rock", label: "Рок" },
+  ],
+};
 
 function AlbumCover({ album, size }: { album: Pick<Album, "title" | "thumb" | "cover">; size: number }) {
   return <Cover s={{ name: album.title, logo: album.cover, kind: "vod", genre: "Музыка", icon: "g:music" }} size={size} className="rounded-lg" eager fit="cover" />;
@@ -97,7 +113,7 @@ function CollectionCard({ c, onClick }: { c: (typeof COLLECTIONS)[number]; onCli
 
 /* ------------------------------------------- страница альбома ------------------------------------------- */
 
-function AlbumPanel({ album, onClose }: { album: Album; onClose: () => void }) {
+function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => void; onPlay: ViewProps["onPlay"] }) {
   const p = usePlayer();
   const [data, setData] = useState<{ title: string; creator: string; cover?: string; tracks: PlaylistItem[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -121,6 +137,8 @@ function AlbumPanel({ album, onClose }: { album: Album; onClose: () => void }) {
     return () => c.abort();
   }, [album.id]);
 
+  useEffect(() => () => player.clearSourceContext({ kind: "album", title: album.title }), [album.id, album.title]);
+
   const tracks = data?.tracks ?? [];
   const visibleTracks = tracks.slice(0, visibleCount);
   const chosen = tracks.filter((t) => sel.has(t.id));
@@ -139,10 +157,11 @@ function AlbumPanel({ album, onClose }: { album: Album; onClose: () => void }) {
   const play = (idx: number) => {
     const t = tracks[idx];
     if (!t) return;
-    if (p.station?.id === itemStationId(t.id)) return player.toggle();
     const st = tracks.map((x) => itemToStation(x));
+    const queue = st.map((s) => s.id);
+    const sourceContext: PlayerSourceContext = { kind: "album", title: album.title };
     player.pin(st);
-    void player.play(st[idx], st.map((s) => s.id));
+    onPlay(st[idx], queue, sourceContext);
   };
 
   const addAll = () => openPicker({ items: tracks, suggest: data?.title || album.title, cover: data?.cover });
@@ -273,7 +292,7 @@ interface Active {
   scope?: AlbumSearchScope;
 }
 
-export function Collections({ online }: { online: boolean }) {
+export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewProps["onPlay"] }) {
   const [text, setText] = useState("");
   const [scope, setScope] = useState<AlbumSearchScope>("artist");
   const [active, setActive] = useState<Active | null>(null);
@@ -313,10 +332,10 @@ export function Collections({ online }: { online: boolean }) {
     return () => ctl.current?.abort();
   }, [active, online, load]);
 
-  const submit = () => {
-    const value = text.trim();
-    const query = textQuery(value, scope);
-    if (query) setActive({ title: `«${value}»`, query, text: value, scope });
+  const submit = (rawText = text, searchScope = scope) => {
+    const value = rawText.trim();
+    const query = textQuery(value, searchScope);
+    if (query) setActive({ title: `«${value}»`, query, text: value, scope: searchScope });
   };
 
   const broadenSearch = () => {
@@ -355,32 +374,58 @@ export function Collections({ online }: { online: boolean }) {
           По названию / жанру
         </button>
       </div>
-      <div className="flex gap-2">
+      <form
+        role="search"
+        aria-label="Поиск музыки офлайн"
+        onSubmit={(event) => { event.preventDefault(); submit(); }}
+        className="flex gap-2"
+      >
         <div className="relative min-w-0 flex-1">
           <SearchIcon size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             data-search
+            type="search"
+            aria-label="Запрос для поиска офлайн-музыки"
+            autoComplete="off"
+            list="offline-music-search-suggestions"
+            maxLength={100}
             className={cn(inputCls, "pl-10 pr-9")}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder={scope === "artist" ? "Например: Земфира, Михаил Круг, a-ha" : "Название альбома, песни или жанр"}
+            placeholder={scope === "artist" ? "Например: Кино, Михаил Круг, a-ha" : "Название альбома, песни или жанр"}
           />
           {text && (
-            <button onClick={() => setText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
+            <button type="button" onClick={() => setText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
               <X size={16} />
             </button>
           )}
+          <datalist id="offline-music-search-suggestions">
+            {QUICK_OFFLINE_SEARCHES[scope].map((suggestion) => <option key={suggestion.query} value={suggestion.query} />)}
+          </datalist>
         </div>
-        <button className={btnPrimary} disabled={!textQuery(text, scope)} onClick={submit}>
-          Найти
+        <button type="submit" className={btnPrimary} disabled={!textQuery(text, scope)}>
+          <SearchIcon size={16} /> Найти
         </button>
-      </div>
+      </form>
       <p className="text-xs leading-relaxed text-muted">
         {scope === "artist"
-          ? "Сначала ищем точного исполнителя и варианты латиницей; при неполных метаданных расширяем поиск по названию."
-          : "Ищем точную фразу в исполнителе, названии и темах."}
+          ? "Ищем точного исполнителя, учитываем варианты латиницей и при нехватке данных проверяем названия."
+          : "Ищем точную фразу в имени исполнителя, названии и темах."}
       </p>
+      <div role="group" className="flex flex-wrap items-center gap-1.5" aria-label="Популярные запросы">
+        <span className="mr-0.5 text-xs text-muted">Попробуйте:</span>
+        {QUICK_OFFLINE_SEARCHES[scope].map((suggestion) => (
+          <button
+            key={suggestion.query}
+            type="button"
+            aria-label={`Быстрый поиск: ${suggestion.label}`}
+            onClick={() => { setText(suggestion.query); submit(suggestion.query, scope); }}
+            className="rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-accent/40 hover:text-accent"
+          >
+            {suggestion.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 
@@ -439,6 +484,9 @@ export function Collections({ online }: { online: boolean }) {
             </button>
             <h2 className="min-w-0 truncate font-display text-xl font-semibold tracking-tight">{active.title}</h2>
           </div>
+          <p role="status" aria-live="polite" className="px-1 text-xs text-muted">
+            {loading ? "Ищем в Internet Archive…" : `Показано записей: ${albums.length}${more ? "+" : ""}`}
+          </p>
 
           {error && (
             <div className="flex items-center gap-3 rounded-xl bg-bad/10 p-4 text-sm text-bad">
@@ -468,13 +516,15 @@ export function Collections({ online }: { online: boolean }) {
               <div className="p-10 text-center text-sm text-muted">
                 {active.text && active.scope === "artist" ? (
                   <>
-                    <p>Совпадений по исполнителю и названию не найдено.</p>
+                    <p>Совпадений по исполнителю и названию не найдено. Проверьте написание или попробуйте вариант латиницей.</p>
                     <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>
                       Искать по всем полям
                     </button>
                   </>
+                ) : active.text ? (
+                  <p>Точных совпадений нет. Проверьте формулировку или выберите другой запрос в подсказках выше.</p>
                 ) : (
-                  "Ничего не найдено. Попробуйте другой запрос или другую коллекцию."
+                  "Ничего не найдено. Попробуйте другую коллекцию."
                 )}
               </div>
             )}
@@ -490,7 +540,7 @@ export function Collections({ online }: { online: boolean }) {
         </>
       )}
 
-      {open && <AlbumPanel album={open} onClose={() => setOpen(null)} />}
+      {open && <AlbumPanel album={open} onClose={() => setOpen(null)} onPlay={onPlay} />}
     </div>
   );
 }

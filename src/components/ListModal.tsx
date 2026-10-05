@@ -3,7 +3,7 @@ import { Activity, CircleCheck, CircleX, ListMusic, Loader2, Play, Plus, Search,
 import type { Station } from "../lib/types";
 import { addMany } from "../lib/db";
 import { pool, probeStream } from "../lib/probe";
-import { player } from "../lib/player";
+import { player, type PlayerSourceContext } from "../lib/player";
 import { toast } from "../lib/toast";
 import { cn } from "../utils/cn";
 import { Modal, Toggle, btnGhost, inputCls } from "./ui";
@@ -21,7 +21,8 @@ interface Props {
   header?: ReactNode;
   items: Station[];
   have: Set<string>;
-  onPlay: (s: Station, queue: string[]) => void;
+  onPlay: (s: Station, queue: string[], sourceContext?: PlayerSourceContext) => void;
+  sourceContext?: PlayerSourceContext;
   loading?: boolean;
   error?: string | null;
   sub?: (s: Station) => string;
@@ -30,7 +31,7 @@ interface Props {
 }
 
 /** Универсальное окно со списком станций: слушать, проверять, добавлять по одной или все сразу. */
-export function ListModal({ open, onClose, title, header, items, have, onPlay, loading, error, sub, canCheck = true, empty }: Props) {
+export function ListModal({ open, onClose, title, header, items, have, onPlay, sourceContext, loading, error, sub, canCheck = true, empty }: Props) {
   const [res, setRes] = useState<Record<string, ProbeState>>({});
   const [running, setRunning] = useState(false);
   const [httpsOnly, setHttpsOnly] = useState(true);
@@ -56,6 +57,10 @@ export function ListModal({ open, onClose, title, header, items, have, onPlay, l
   useEffect(() => {
     if (open) player.setEphemeral(visible);
   }, [open, visible]);
+  useEffect(() => {
+    if (!sourceContext) return;
+    return () => player.clearSourceContext(sourceContext);
+  }, [sourceContext?.kind, sourceContext?.title]);
 
   const fresh = visible.filter((s) => !have.has(s.url));
   const checked = Object.keys(res).length > 0 && !running;
@@ -124,7 +129,7 @@ export function ListModal({ open, onClose, title, header, items, have, onPlay, l
           <button
             className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-accent-ink shadow-lg shadow-accent/20 disabled:opacity-40"
             disabled={!visible.length}
-            onClick={() => visible[0] && onPlay(visible[0], visible.map((x) => x.id))}
+            onClick={() => visible[0] && onPlay(visible[0], visible.map((x) => x.id), sourceContext)}
           >
             <Play size={17} className="fill-current" /> Слушать
           </button>
@@ -175,7 +180,7 @@ export function ListModal({ open, onClose, title, header, items, have, onPlay, l
             sub={sub ? sub(s) : [s.genre, s.mood, s.city].filter(Boolean).join(" · ")}
             inLib={have.has(s.url)}
             status={res[s.url]}
-            onPlay={() => onPlay(s, visible.map((x) => x.id))}
+            onPlay={() => onPlay(s, visible.map((x) => x.id), sourceContext)}
             onAdd={() => add([s])}
           />
         ))}

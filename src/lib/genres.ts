@@ -4,8 +4,8 @@ const RULES: [RegExp, string, string][] = [
   [/blues|блюз/, "Блюз", "Спокойное"],
   [/jazz|swing|bebop|bossa|джаз/, "Джаз", ""],
   [/classical|classic music|opera|orchestra|baroque|symphon|классик|опера/, "Классика", "Спокойное"],
-  [/lo-?fi|chillhop|study/, "Ambient / Chill", "Фокус"],
-  [/ambient|chill|lounge|downtempo|relax|meditat|new age|easy listening|sleep|drone|спокойн/, "Ambient / Chill", "Спокойное"],
+  [/lo-?fi|chillhop|study/, "Эмбиент / чилаут", "Фокус"],
+  [/ambient|chill|lounge|downtempo|relax|meditat|new age|easy listening|sleep|drone|спокойн/, "Эмбиент / чилаут", "Спокойное"],
   [/techno|house|trance|edm|electro|dance|dnb|drum.?n|dubstep|club|synth|phonk|vapor|электрон|танцев/, "Электроника", "Энергия"],
   [/hip.?hop|rap|trap|r&b|rnb|хип|рэп/, "Хип-хоп", "Энергия"],
   [/country|americana|bluegrass|кантри/, "Кантри", "Весёлое"],
@@ -17,7 +17,7 @@ const RULES: [RegExp, string, string][] = [
   [/podcast|подкаст|audiobook|аудиокниг/, "Подкасты", ""],
   [/talk|speech|sport|religio|christian|culture|разговор|спорт/, "Разговорное", "Фокус"],
   [/kids|children|детск|baby|toggo/, "Детям", "Весёлое"],
-  [/latin|salsa|reggaeton|bachata|latino/, "Latino", "Весёлое"],
+  [/latin|salsa|reggaeton|bachata|latino/, "Латиноамериканская музыка", "Весёлое"],
   [/pop|hits|top ?40|charts|поп|хит/, "Поп", "Весёлое"],
 ];
 

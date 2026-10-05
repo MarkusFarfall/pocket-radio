@@ -63,7 +63,7 @@ export function Discover({ stations, online, onPlay }: ViewProps) {
       {sub === "packs" && <Packs have={have} onPlay={onPlay} />}
       {sub === "search" && <Search have={have} online={online} onPlay={onPlay} />}
       {sub === "podcasts" && <Podcasts online={online} />}
-      {sub === "collections" && <Collections online={online} />}
+      {sub === "collections" && <Collections online={online} onPlay={onPlay} />}
       {sub === "playlists" && <Playlists have={have} online={online} onPlay={onPlay} />}
     </div>
   );

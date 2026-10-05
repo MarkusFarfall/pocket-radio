@@ -72,24 +72,44 @@ export function somaChannels(): Promise<Found[]> {
 /* =============================== Radio Garden =============================== */
 
 interface GardenHit {
-  _source: { code?: string; page: { url: string; type: string; title: string; subtitle?: string } };
+  _source?: { code?: string; page?: { url?: string; type?: string; title?: string; subtitle?: string } };
 }
 
+interface GardenSearchResponse {
+  hits?: { hits?: GardenHit[] };
+  error?: string;
+}
+
+/**
+ * Radio Garden does not expose its unofficial search API to arbitrary browser origins.
+ * Use the same-origin Vercel function (and Vite proxy in development) to avoid CORS.
+ */
 export async function gardenSearch(q: string, signal?: AbortSignal): Promise<Found[]> {
-  const r = await fetch(`https://radio.garden/api/search?q=${encodeURIComponent(q)}`, { signal });
-  if (!r.ok) throw new Error(`Сервер ответил ${r.status}`);
-  const j = (await r.json()) as { hits?: { hits?: GardenHit[] } };
+  const r = await fetch(`/api/radio-garden/search?q=${encodeURIComponent(q.trim())}`, {
+    signal,
+    headers: { Accept: "application/json" },
+  });
+  if (!r.ok) {
+    const payload = (await r.json().catch(() => null)) as GardenSearchResponse | null;
+    throw new Error(payload?.error || `Radio Garden ответил ${r.status}`);
+  }
+
+  const j = (await r.json()) as GardenSearchResponse;
+  const hits = j.hits?.hits;
+  if (!Array.isArray(hits)) throw new Error("Radio Garden вернул неожиданный формат ответа");
+
   const out: Found[] = [];
-  for (const h of j.hits?.hits ?? []) {
-    const p = h._source.page;
-    if (p.type !== "channel") continue;
-    const id = p.url.split("/").pop();
+  for (const h of hits) {
+    const source = h?._source;
+    const p = source?.page;
+    if (p?.type !== "channel" || !p.url || !p.title?.trim()) continue;
+    const id = p.url.split("/").filter(Boolean).pop();
     if (!id) continue;
     const g = guessGenre(p.title);
     out.push({
       id: `rg-${id}`,
-      name: p.title,
-      url: `https://radio.garden/api/ara/content/listen/${id}/channel.mp3`,
+      name: p.title.trim(),
+      url: `https://radio.garden/api/ara/content/listen/${encodeURIComponent(id)}/channel.mp3`,
       kind: "http",
       genre: g.genre,
       mood: g.mood,
@@ -100,7 +120,7 @@ export async function gardenSearch(q: string, signal?: AbortSignal): Promise<Fou
       bitrate: 128,
       votes: 0,
       codec: "",
-      countryCode: h._source.code ?? "",
+      countryCode: source?.code ?? "",
       language: "",
     });
   }

@@ -201,7 +201,7 @@ export function Playlists({ have, online, onPlay }: { have: Set<string>; online:
         </button>
       </div>
 
-      <ListModal open={!!open} onClose={() => setOpen(null)} title={open?.name} items={stations} have={have} onPlay={onPlay} loading={plLoading} error={plError} sub={(s) => [s.genre, s.city].filter(Boolean).join(" · ") || s.url.replace(/^https?:\/\//, "").slice(0, 40)} />
+      <ListModal open={!!open} onClose={() => setOpen(null)} title={open?.name} sourceContext={open ? { kind: "playlist", title: open.name } : undefined} items={stations} have={have} onPlay={onPlay} loading={plLoading} error={plError} sub={(s) => [s.genre, s.city].filter(Boolean).join(" · ") || s.url.replace(/^https?:\/\//, "").slice(0, 40)} />
     </div>
   );
 }

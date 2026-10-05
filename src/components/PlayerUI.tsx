@@ -30,7 +30,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { player, usePlayer, usePlayerTime, type PlayerState } from "../lib/player";
+import { player, usePlayer, usePlayerTime, type PlayerSourceContext, type PlayerState } from "../lib/player";
 import { saveToLibrary, saveTrack, toggleFavoriteAny, trackLabel } from "../lib/db";
 import { removeFromLibrary } from "../lib/library";
 import { fmtClock, fmtBytes, hueOf, KIND_LABEL } from "../lib/templates";
@@ -76,9 +76,37 @@ async function favorite(st: Station) {
 
 /** Закрыть плеер (свайп, крестик) с возможностью вернуть. */
 function dismissPlayer() {
-  const { station, queue, sourcePlaylistId } = player.getState();
+  const { station, queue, sourcePlaylistId, sourceContext } = player.getState();
   player.stop();
-  if (station) toast("Плеер закрыт", "info", { label: "Вернуть", run: () => void player.play(station, queue, { sourcePlaylistId }) });
+  if (station) toast("Плеер закрыт", "info", { label: "Вернуть", run: () => void player.play(station, queue, { sourcePlaylistId, sourceContext }) });
+}
+
+function SourceReturnButton({
+  sourcePlaylistId,
+  sourceContext,
+  onBackToPlaylist,
+  onClose,
+}: {
+  sourcePlaylistId: string | null;
+  sourceContext: PlayerSourceContext | null;
+  onBackToPlaylist: (id: string) => void;
+  onClose: () => void;
+}) {
+  if (!sourcePlaylistId && !sourceContext) return null;
+  const label = sourceContext?.kind === "album" ? "К альбому" : sourceContext?.kind === "collection" ? "К подборке" : "К плейлисту";
+  const ariaLabel = sourceContext?.kind === "album" && !sourcePlaylistId ? "Вернуться к альбому" : sourceContext?.kind === "collection" && !sourcePlaylistId ? "Вернуться к подборке" : "Вернуться к плейлисту";
+  return (
+    <button
+      onClick={() => sourcePlaylistId ? onBackToPlaylist(sourcePlaylistId) : onClose()}
+      className="mx-auto mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-surface-2/75 px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-surface-2"
+      aria-label={ariaLabel}
+      title={sourceContext?.title ? `${label}: ${sourceContext.title}` : label}
+    >
+      <ArrowLeft size={14} className="shrink-0" />
+      <span className="shrink-0">{label}</span>
+      {sourceContext?.title && <span className="max-w-[12rem] truncate font-normal text-muted">{sourceContext.title}</span>}
+    </button>
+  );
 }
 
 /* ------------------------------ свайп для закрытия ------------------------------ */
@@ -544,19 +572,7 @@ export function FullPlayer({
             <button onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink" aria-label="Свернуть плеер">
               <ChevronDown size={21} />
             </button>
-            {p.sourcePlaylistId ? (
-              <button
-                onClick={() => onBackToPlaylist(p.sourcePlaylistId!)}
-                className="inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full bg-surface-2 px-3 text-sm font-semibold text-ink transition hover:bg-surface-2/80"
-                aria-label="Вернуться к плейлисту"
-                title="Вернуться к плейлисту"
-              >
-                <ArrowLeft size={16} className="shrink-0" />
-                <span className="truncate">К плейлисту</span>
-              </button>
-            ) : (
-              <span className="text-sm font-semibold text-muted">Сейчас играет</span>
-            )}
+            <span className="text-sm font-semibold text-muted">Сейчас играет</span>
             {saved ? (
               <button onClick={() => onEdit(saved)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink" aria-label="Редактировать">
                 <Pencil size={18} />
@@ -581,6 +597,7 @@ export function FullPlayer({
             </div>
             <h2 className="mx-auto mt-1.5 line-clamp-2 max-w-sm break-words font-display text-[1.45rem] font-bold leading-[1.12] tracking-tight [overflow-wrap:anywhere]">{p.meta?.title || st.name}</h2>
             <p className="mx-auto mt-1 line-clamp-1 max-w-sm text-sm text-muted">{p.meta?.title ? [p.meta.artist, st.name].filter(Boolean).join(" · ") : [st.genre, st.city].filter(Boolean).join(" · ") || mediaLabel(st, p.isLive)}</p>
+            <SourceReturnButton sourcePlaylistId={p.sourcePlaylistId} sourceContext={p.sourceContext} onBackToPlaylist={onBackToPlaylist} onClose={onClose} />
           </div>
           </div>
 
@@ -638,7 +655,7 @@ export function FullPlayer({
             </div>
             {upcoming.length ? (
               <ul className="border-t border-line/70 px-1.5 py-1">
-                {upcoming.map((s) => <li key={s.id}><button onClick={() => void player.play(s, p.queue, { sourcePlaylistId: p.sourcePlaylistId })} className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2"><Cover s={s} size={38} className="rounded-lg" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{s.name}</span><span className="block truncate text-xs text-muted">{s.genre || s.city || mediaLabel(s, s.kind !== "vod")}</span></span><Play size={14} className="shrink-0 fill-current text-muted" /></button></li>)}
+                {upcoming.map((s) => <li key={s.id}><button onClick={() => void player.play(s, p.queue, { sourcePlaylistId: p.sourcePlaylistId, sourceContext: p.sourceContext })} className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2"><Cover s={s} size={38} className="rounded-lg" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{s.name}</span><span className="block truncate text-xs text-muted">{s.genre || s.city || mediaLabel(s, s.kind !== "vod")}</span></span><Play size={14} className="shrink-0 fill-current text-muted" /></button></li>)}
               </ul>
             ) : <p className="border-t border-line/70 px-3.5 py-3 text-xs leading-relaxed text-muted">В очереди больше ничего нет. Добавьте трек в плейлист или выберите другую станцию.</p>}
           </section>
@@ -667,18 +684,7 @@ export function FullPlayer({
             <button onClick={onClose} className="rounded-full bg-surface-2/80 p-2 text-ink backdrop-blur transition hover:brightness-95" aria-label="Свернуть">
               <ChevronDown size={22} />
             </button>
-            {p.sourcePlaylistId ? (
-              <button
-                onClick={() => onBackToPlaylist(p.sourcePlaylistId!)}
-                className="inline-flex items-center gap-2 rounded-full bg-surface-2/80 px-3 py-2 text-xs font-semibold text-ink transition hover:bg-surface-2"
-                aria-label="Вернуться к плейлисту"
-                title="Вернуться к плейлисту"
-              >
-                <ArrowLeft size={15} /> К плейлисту
-              </button>
-            ) : (
-              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">{mediaLabel(st, p.isLive)}</span>
-            )}
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">{mediaLabel(st, p.isLive)}</span>
             {saved ? (
               <button onClick={() => onEdit(saved)} className="rounded-full bg-surface-2/80 p-2 text-ink backdrop-blur transition hover:brightness-95" aria-label="Редактировать">
                 <Pencil size={20} />
@@ -712,6 +718,7 @@ export function FullPlayer({
                 <p className="mt-1 text-sm text-muted">
                   {p.meta?.title ? [p.meta.artist, st.name].filter(Boolean).join(" · ") : [st.genre, st.city].filter(Boolean).join(" · ") || KIND_LABEL[st.kind]}
                 </p>
+                <SourceReturnButton sourcePlaylistId={p.sourcePlaylistId} sourceContext={p.sourceContext} onBackToPlaylist={onBackToPlaylist} onClose={onClose} />
                 {p.meta?.title && !p.fallback && (
                   <button
                     onClick={async () =>

@@ -24,8 +24,8 @@ function wav(seconds = 30, sampleRate = 8_000): Buffer {
   return out;
 }
 
-async function openAsGuest(page: Page) {
-  await page.setViewportSize({ width: 320, height: 740 });
+async function openAsGuest(page: Page, width = 320) {
+  await page.setViewportSize({ width, height: 740 });
   await page.addInitScript(() => localStorage.setItem("pr.guest", "1"));
   await page.goto("/");
   await expect(page.getByRole("button", { name: /Быстрый старт/ }).first()).toBeVisible();
@@ -70,6 +70,11 @@ test("full player returns directly to the playlist that started the current trac
   const playerPage = page.locator(".player-mobile");
   const returnButton = page.getByRole("button", { name: "Вернуться к плейлисту" });
   await expect(returnButton).toBeVisible();
+  const titleBox = await page.getByRole("heading", { name: "Return Song" }).boundingBox();
+  const returnBox = await returnButton.boundingBox();
+  expect(titleBox).not.toBeNull();
+  expect(returnBox).not.toBeNull();
+  expect(returnBox!.y).toBeGreaterThan(titleBox!.y);
   await expectNoHorizontalPageOverflow(page);
   await playerPage.getByRole("button", { name: /Middle Song/ }).click();
   await expect(page.getByRole("heading", { name: "Middle Song" })).toBeVisible();
@@ -80,4 +85,24 @@ test("full player returns directly to the playlist that started the current trac
   await expect(page.getByRole("main").getByRole("heading", { name: "Weekend Mix" })).toBeVisible();
   await expect(page.getByRole("button", { name: 'Включить «Return Song»' })).toBeVisible();
   await expectNoHorizontalPageOverflow(page);
+});
+
+test("desktop full player exposes the source-playlist return action", async ({ page }) => {
+  await openAsGuest(page, 1280);
+  await page.getByRole("navigation", { name: "Разделы" }).getByRole("button", { name: /Плейлисты/ }).click();
+  await page.getByRole("button", { name: "Новый плейлист" }).click();
+  await page.getByLabel("Название").fill("Desktop Mix");
+  await page.getByRole("dialog").getByRole("button", { name: "Создать", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Desktop Mix" })).toBeVisible();
+  await page.locator('input[type="file"][multiple][accept*=".wav"]').setInputFiles([
+    { name: "Desktop Song.wav", mimeType: "audio/wav", buffer: wav(180) },
+  ]);
+  await expect(page.getByText("Desktop Song", { exact: true })).toBeVisible({ timeout: 12_000 });
+  await page.getByRole("button", { name: 'Включить «Desktop Song»' }).click();
+  await page.getByRole("button", { name: "Открыть плеер на весь экран" }).click();
+
+  const returnButton = page.getByRole("button", { name: "Вернуться к плейлисту" });
+  await expect(returnButton).toBeVisible();
+  await returnButton.click();
+  await expect(page.getByRole("main").getByRole("heading", { name: "Desktop Mix" })).toBeVisible();
 });

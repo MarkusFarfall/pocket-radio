@@ -256,7 +256,7 @@ export async function playPlaylist(pl: Playlist, o: { startId?: string; shuffle?
   const startSid = o.startId ? itemStationId(o.startId) : null;
   const start = (startSid && stations.find((s) => s.id === startSid)) || stations[0];
   player.pin(stations);
-  await player.play(start, stations.map((s) => s.id), { fallback: o.fallback, sourcePlaylistId: pl.id });
+  await player.play(start, stations.map((s) => s.id), { fallback: o.fallback, sourcePlaylistId: pl.id, sourceContext: { kind: "playlist", title: pl.name } });
 }
 
 /* ------------------------------------ скачивание офлайн ------------------------------------ */
