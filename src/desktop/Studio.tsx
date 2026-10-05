@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Keyboard, PanelRight, Plus, Search, Wifi, WifiOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, Keyboard, PanelRight, Plus, Wifi, WifiOff } from "lucide-react";
 import type { Station } from "../lib/types";
 import type { Tab } from "../views/shared";
 import { NAV } from "../lib/nav";
@@ -23,7 +23,6 @@ interface Props {
   online: boolean;
   onPlay: (s: Station, queue: string[]) => void;
   onAdd: () => void;
-  openPalette: () => void;
   openHelp: () => void;
   openAccount: () => void;
   openPlayer: () => void;
@@ -85,12 +84,12 @@ function Library({ stations, onPlay }: { stations: Station[]; onPlay: (s: Statio
  * Компоновка «Студия» для компьютера: слева — разделы и библиотека, в центре — страница,
  * справа — «Сейчас играет», внизу — док-плеер.
  */
-export function Studio({ tab, onTab, back, forward, canBack, canForward, stations, online, onPlay, onAdd, openPalette, openHelp, openAccount, openPlayer, onEdit, onQr, style, children }: Props) {
+export function Studio({ tab, onTab, back, forward, canBack, canForward, stations, online, onPlay, onAdd, openHelp, openAccount, openPlayer, onEdit, onQr, style, children }: Props) {
   const dp = useDesktopPrefs();
   const wide = useMedia("(min-width: 1280px)");
   const p = usePlayer();
   const scroller = useRef<HTMLElement>(null);
-  const showPanel = dp.panel && wide;
+  const showPanel = dp.panel && wide && !!p.station;
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 });
@@ -146,11 +145,6 @@ export function Studio({ tab, onTab, back, forward, canBack, canForward, station
                 <ChevronRight size={21} className="mx-auto" />
               </button>
             </div>
-            <button onClick={openPalette} className="flex w-full max-w-md items-center gap-3 rounded-full border border-line bg-surface px-4 py-2.5 text-sm text-muted transition hover:border-ink/30 hover:text-ink">
-              <Search size={17} />
-              <span className="truncate">Поиск станций, жанров, команд…</span>
-              <kbd className="ml-auto rounded-md border border-line bg-bg px-1.5 py-0.5 font-mono text-[10px]">Ctrl K</kbd>
-            </button>
             <div className="ml-auto flex items-center gap-2">
               <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", online ? "bg-ok/15 text-ok" : "bg-amber-500/15 text-amber-600 dark:text-amber-400")}>
                 {online ? <Wifi size={13} /> : <WifiOff size={13} />}
@@ -161,11 +155,12 @@ export function Studio({ tab, onTab, back, forward, canBack, canForward, station
               </button>
               {wide && (
                 <button
-                  onClick={() => setDesktopPrefs({ panel: !dp.panel })}
-                  aria-pressed={dp.panel}
-                  className={cn("rounded-full p-2 transition hover:bg-surface-2", dp.panel ? "text-accent" : "text-muted hover:text-ink")}
+                  onClick={() => p.station && setDesktopPrefs({ panel: !dp.panel })}
+                  disabled={!p.station}
+                  aria-pressed={!!p.station && dp.panel}
+                  className={cn("rounded-full p-2 transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-35", dp.panel && p.station ? "text-accent" : "text-muted hover:text-ink")}
                   aria-label="Панель «Сейчас играет»"
-                  title="Панель «Сейчас играет» (P)"
+                  title={p.station ? "Панель «Сейчас играет» (P)" : "Панель появится после выбора станции"}
                 >
                   <PanelRight size={19} />
                 </button>

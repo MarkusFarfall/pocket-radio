@@ -9,8 +9,9 @@
 **Стек:** Vite 7 · React 19 · TypeScript 5.9 · Tailwind CSS 4 · Dexie (IndexedDB) ·
 Supabase Auth (REST без SDK).
 
-**Supabase:** проект [`pocket-radio`](https://supabase.com/dashboard/project/zcohgsqefkygwvyzrico)
-(`zcohgsqefkygwvyzrico`, Frankfurt). Схема уже накатана.
+**Supabase:** production использует проект [`pocket-radio`](https://supabase.com/dashboard/project/zcohgsqefkygwvyzrico)
+(`zcohgsqefkygwvyzrico`, Frankfurt). В локальном `vite dev` по умолчанию включён локальный auth;
+для облачной проверки задайте `VITE_AUTH_PROVIDER=supabase`.
 
 **Живая версия:** https://pocket-radio-iota.vercel.app
 
@@ -35,26 +36,32 @@ Supabase Auth (REST без SDK).
 ```bash
 cd projects/pocket-radio
 npm ci
-cp .env.example .env.local   # необязательно: без этого — локальные аккаунты
+cp .env.example .env.local   # рекомендуем: локальный auth по умолчанию
 npm run dev                  # http://localhost:5173
 npm run build                # прод-сборка в dist/
 npm run typecheck
+npx playwright install chromium  # один раз: браузер для UI-тестов
+npm test                    # адаптивность, навигация, auth и плеер
 ```
 
-`vite-plugin-singlefile` инлайнит JS/CSS в один `dist/index.html`. Service worker,
-манифест и иконка копируются из `public/`.
+Vite собирает код в отдельные файлы `dist/assets/`; HLS-плеер загружается отдельным
+чанком только при необходимости, что уменьшает начальную загрузку на телефоне.
+Service worker кеширует загруженные same-origin JS/CSS-ресурсы, манифест и иконку.
 
 ## Supabase
 
-Аккаунты и облачный снимок включаются двумя переменными:
+Локальный `vite dev` использует локальные аккаунты и не отправляет данные в облако.
+Чтобы тестировать текущий production-проект, задайте `VITE_AUTH_PROVIDER=supabase`.
+Для подключения собственного проекта укажите обе переменные ниже:
 
 ```
+VITE_AUTH_PROVIDER=supabase
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 ```
 
-Локально — в `.env.local`. На Vercel — Environment Variables того же проекта
-(Production + Preview). Это **публичный anon key**, его можно светить на клиенте;
+Локально — в `.env.local`. На Vercel — `VITE_AUTH_PROVIDER=supabase` и при необходимости `VITE_SUPABASE_URL` /
+`VITE_SUPABASE_ANON_KEY` (Production + Preview). Это **публичный anon key**, его можно светить на клиенте;
 защиту дают RLS. `service_role` в репозиторий и в `VITE_*` не класть.
 
 Дальше:
@@ -94,4 +101,6 @@ supabase/
 ```
 
 У каждого аккаунта своя база IndexedDB (`pocket-radio-u-<id>`), гостевая — `local-radio`.
-Без переменных Supabase вход остаётся полностью локальным.
+В dev-режиме Supabase не вызывается без явного `VITE_AUTH_PROVIDER=supabase`.
+Production сохраняет подключение к стандартному Pocket Radio Supabase; установите
+`VITE_AUTH_PROVIDER=local`, чтобы отключить облачный auth.

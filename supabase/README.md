@@ -1,8 +1,10 @@
 # Подключение Supabase к Pocket Radio
 
-Живой проект: [pocket-radio](https://supabase.com/dashboard/project/zcohgsqefkygwvyzrico)
+Production-проект: [pocket-radio](https://supabase.com/dashboard/project/zcohgsqefkygwvyzrico)
 (`zcohgsqefkygwvyzrico`, Frankfurt). Схема (`profiles`, `user_data`, RLS, триггер, `delete_my_account`)
-уже применена. Публичный anon key зашит в клиент как значение по умолчанию; `VITE_SUPABASE_*` его перекрывают.
+уже применена. Production сохраняет публичные Supabase defaults; `VITE_SUPABASE_*` их перекрывают.
+Для безопасной локальной разработки `vite dev` использует локальный auth, если явно не задано
+`VITE_AUTH_PROVIDER=supabase`. Значения из `.env.example` выбирают локальный auth.
 
 ## Шаги
 
@@ -10,15 +12,19 @@
 2. Откройте **SQL Editor** и выполните `supabase/schema.sql` (таблицы, политики доступа RLS, триггер профиля,
    функция `delete_my_account`).
 3. **Project Settings → API**: скопируйте *Project URL* и *anon public key*.
-4. В корне проекта скопируйте `.env.example` в `.env.local` и вставьте значения:
+4. В корне проекта задайте режим и, если подключаете собственный проект, скопируйте `.env.example`
+   в `.env.local` и заполните значения:
 
    ```
+   VITE_AUTH_PROVIDER=supabase
    VITE_SUPABASE_URL=https://xxxx.supabase.co
    VITE_SUPABASE_ANON_KEY=eyJ...
    ```
 
-   На Vercel те же имена задаются в **Project Settings → Environment Variables**
-   (Production и Preview). Переменные `VITE_*` вшиваются в клиент на этапе `vite build`.
+   На Vercel задайте `VITE_AUTH_PROVIDER=supabase` и при необходимости те же `VITE_SUPABASE_*`
+   в **Project Settings → Environment Variables** (Production и Preview). Переменные `VITE_*`
+   вшиваются в клиент на этапе `vite build`. Если указана только одна из пары URL/key, Supabase
+   считается не настроенным.
 5. Пересоберите приложение (`npm run build`). Вход и регистрация пойдут через Supabase, логином станет email.
 6. **Authentication → URL Configuration**: добавьте адрес, где опубликовано приложение (Site URL и Redirect URLs) —
    иначе ссылки из писем (подтверждение email, сброс пароля) будут вести не туда.

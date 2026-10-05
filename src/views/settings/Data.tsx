@@ -46,7 +46,7 @@ export function Data({ stations, online }: { stations: Station[]; online: boolea
   return (
     <>
       <Group title="Резервная копия и экспорт">
-        <Row title="Скачать" desc="JSON — полная копия (можно со статистикой). M3U — список для других плееров." stack>
+        <Row title="Скачать" desc="JSON — каталог, плейлисты и прогресс; скачанное аудио в копию не входит. M3U — список станций для других плееров." stack>
           <label className="flex items-center justify-between gap-3 text-sm">
             Включить историю и статистику
             <Toggle checked={withStats} onChange={setWithStats} label="Экспорт со статистикой" />
@@ -183,8 +183,8 @@ export function Data({ stations, online }: { stations: Station[]; online: boolea
         )}
       </Group>
 
-      <Group title="Скачанные подкасты">
-        <Row title="Доступно офлайн" desc={offline.length ? `Файлов: ${offline.length}` : "Песни и серии скачиваются из плейлиста кнопкой «Скачать офлайн»."} stack={offline.length > 0}>
+      <Group title="Офлайн-аудио">
+        <Row title="Доступно офлайн" desc={offline.length ? `Файлов: ${offline.length}` : "Песни и серии скачиваются из плейлиста кнопкой «Скачать офлайн». Файлы хранятся только на этом устройстве."} stack={offline.length > 0}>
           {offline.length > 0 && (
             <ul className="space-y-1">
               {offline.map((o) => {
@@ -227,7 +227,7 @@ export function Data({ stations, online }: { stations: Station[]; online: boolea
             Очистить
           </button>
         </Row>
-        <Row title="Удалить все станции" desc="Каталог, избранное, сохранённые треки и офлайн-кэш будут стёрты.">
+        <Row title="Удалить все станции" desc="Каталог, избранное, сохранённые треки и загрузки станций из каталога будут стёрты. Музыкальные плейлисты останутся.">
           {confirmAll ? (
             <div className="flex gap-2">
               <button className={btnGhost} onClick={() => setConfirmAll(false)}>

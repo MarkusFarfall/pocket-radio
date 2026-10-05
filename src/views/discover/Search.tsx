@@ -42,8 +42,8 @@ function fmtNum(n: number) {
 
 export function Search({ have, online, onPlay }: { have: Set<string>; online: boolean; onPlay: ViewProps["onPlay"] }) {
   const [source, setSource] = useState<Source>("rb");
-  const [q, setQ] = useState(() => localStorage.getItem("radio.searchQ") ?? "");
-  const [dq, setDq] = useState(() => (localStorage.getItem("radio.searchQ") ?? "").trim());
+  const [q, setQ] = useState("");
+  const [dq, setDq] = useState("");
   const [tag, setTag] = useState("");
   const [country, setCountry] = useState("");
   const [language, setLanguage] = useState("");

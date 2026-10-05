@@ -3,9 +3,8 @@ import { AuthError, type AuthProvider, type AuthUser } from "./types";
 /**
  * Supabase Auth через открытый REST (GoTrue), без SDK.
  *
- * Проект: https://supabase.com/dashboard/project/zcohgsqefkygwvyzrico
- * Схема: supabase/schema.sql (profiles, user_data, RLS, delete_my_account).
- * Переменные VITE_SUPABASE_* перекрывают значения по умолчанию (публичный anon key).
+ * Production использует стандартный Pocket Radio Supabase проект; переменные VITE_SUPABASE_*
+ * перекрывают значения по умолчанию. В dev поставщик по умолчанию локальный (см. auth/index.ts).
  *
  * Данные (станции, статистика) лежат локально; синхронизация с облаком — в ../sync.ts.
  */
@@ -14,10 +13,26 @@ const DEFAULT_URL = "https://zcohgsqefkygwvyzrico.supabase.co";
 const DEFAULT_ANON =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpjb2hnc3FlZmt5Z3d2eXpyaWNvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExMjYwMzMsImV4cCI6MjEwNjcwMjAzM30.WlbQlR8Ud1XxwfThW-M6VxTnh_ROetUbU-n8iV36WCw";
 
-const URL_ = ((import.meta.env.VITE_SUPABASE_URL as string | undefined) || DEFAULT_URL).replace(/\/+$/, "");
-const KEY_ = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || DEFAULT_ANON;
+const envUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? "";
+const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ?? "";
+const hasOverrides = !!(envUrl || envKey);
+const URL_ = (hasOverrides ? envUrl : DEFAULT_URL).replace(/\/+$/, "");
+const KEY_ = hasOverrides ? envKey : DEFAULT_ANON;
 
-export const supabaseConfigured = !!URL_ && !!KEY_;
+function validEndpoint(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const isHttps = url.protocol === "https:";
+    const isLocalHttp = url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
+    return !!url.hostname && (isHttps || isLocalHttp);
+  } catch {
+    return false;
+  }
+}
+
+const hasPlaceholder = (value: string) => /(?:xxxx|your[-_ ]?(?:project|url|key)|eyJ\.\.\.)/i.test(value);
+export const supabaseConfigured =
+  validEndpoint(URL_) && KEY_.length > 20 && !hasPlaceholder(URL_) && !hasPlaceholder(KEY_);
 export const supabaseConfig = { url: URL_, key: KEY_ };
 
 interface SbUser {

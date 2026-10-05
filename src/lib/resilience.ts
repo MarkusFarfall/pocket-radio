@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { db, draftToStation } from "./db";
 import { player } from "./player";
 import { connectivity } from "./connectivity";
+import { hasCachedAudio } from "./offline";
 import { ambient, sceneFor, sceneInfo, type SceneId } from "./ambient";
 import { isLanUrl } from "./templates";
 import { toast } from "./toast";
@@ -106,13 +107,7 @@ export function useResilience(): ResilienceSettings {
 
 async function needsInternet(st: Station): Promise<boolean> {
   if (st.kind === "lan" || isLanUrl(st.url)) return false;
-  if (st.kind === "vod") {
-    try {
-      if (await db.offline.get(st.id)) return false;
-    } catch {
-      /* ignore */
-    }
-  }
+  if (st.kind === "vod" && (await hasCachedAudio(st))) return false;
   return true;
 }
 

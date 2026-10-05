@@ -109,3 +109,17 @@ body {
   transition-duration: 0.01ms !important;
   scroll-behavior: auto !important;
 }
+
+/* Главная в «Студии»: раскладка зависит от ширины центральной колонки, а не окна. */
+.home-feature-container {
+  container: home-feature / inline-size;
+}
+.home-feature-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+@container home-feature (min-width: 900px) {
+  .home-feature-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(21rem, 21rem);
+  }
+}

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, draftToStation, setSetting } from "./db";
+import { activeDbName, db, draftToStation, setSetting } from "./db";
 import { player } from "./player";
 import { connectivity } from "./connectivity";
 import { downloadVod, removeVod } from "./offline";
@@ -34,13 +34,26 @@ async function loadAll(): Promise<Playlist[]> {
     .map((r) => r.value as Playlist)
     .map((p) => ({ ...p, name: fixText(p.name), desc: fixText(p.desc), cover: p.cover || p.follow?.art || p.items?.find((i) => i.logo)?.logo, items: dedupe(p.items ?? []) }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  // Старые плейлисты создавались без поля cover. Мигрируем их один раз в фоне.
+  // Старые плейлисты получают одну главную обложку с первого трека и пытаются сохранить её локально.
   for (const p of lists) {
     if (!p.cover || coverMigrations.has(p.id)) continue;
     const raw = rows.find((r) => r.key === PL + p.id)?.value as Playlist | undefined;
     if (raw?.cover) continue;
     coverMigrations.add(p.id);
-    void snapshotImage(p.cover).then((cover) => updatePlaylist(p.id, { cover })).catch(() => undefined);
+    const candidate = p.cover;
+    const scope = activeDbName();
+    // loadAll может вызываться внутри Dexie liveQuery; откладываем запись до закрытия read-транзакции.
+    setTimeout(() => {
+      if (scope !== activeDbName()) {
+        coverMigrations.delete(p.id);
+        return;
+      }
+      void mutate(p.id, (current) => {
+        if (!current.cover) current.cover = candidate;
+      })
+        .then(() => snapshotPlaylistCover(p.id, candidate))
+        .catch(() => coverMigrations.delete(p.id));
+    }, 0);
   }
   return lists;
 }
@@ -57,6 +70,18 @@ export async function getPlaylist(id: string): Promise<Playlist | undefined> {
 }
 
 const save = (p: Playlist) => setSetting(PL + p.id, p);
+
+/** Сохраняет сетевую обложку в playlist data, но не перезаписывает выбор пользователя. */
+function snapshotPlaylistCover(id: string, source: string): void {
+  if (!source || source.startsWith("data:")) return;
+  void snapshotImage(source)
+    .then(async (cover) => {
+      if (cover === source) return;
+      const current = await getPlaylist(id);
+      if (current?.cover === source) await updatePlaylist(id, { cover });
+    })
+    .catch(() => undefined);
+}
 
 async function mutate(id: string, fn: (p: Playlist) => void): Promise<void> {
   await db.transaction("rw", db.settings, async () => {
@@ -80,12 +105,8 @@ export async function createPlaylist(name: string, items: PlaylistItem[] = [], e
   const candidate = extra.cover || extra.follow?.art || items.find((i) => i.logo)?.logo;
   const p: Playlist = { id: uid(), name: name.trim().slice(0, 80) || "Новый плейлист", desc: (extra.desc ?? "").trim(), cover: candidate, items: dedupe(items), follow: extra.follow, createdAt: now, updatedAt: now };
   await save(p);
-  // Копия изображения остаётся в плейлисте даже после очистки HTTP-кэша.
-  if (candidate && !candidate.startsWith("data:")) {
-    void snapshotImage(candidate).then((cover) => {
-      if (cover !== candidate) void updatePlaylist(p.id, { cover });
-    });
-  }
+  // Берём одну обложку альбома/подписки/первого трека и сразу пытаемся сохранить её внутри плейлиста.
+  if (candidate) snapshotPlaylistCover(p.id, candidate);
   return p;
 }
 
@@ -100,21 +121,27 @@ export async function updatePlaylist(id: string, patch: { name?: string; desc?: 
 /** Добавляет треки; уже имеющиеся пропускает. Возвращает, сколько добавлено. */
 export async function addItems(id: string, items: PlaylistItem[]): Promise<number> {
   let added = 0;
+  let coverCandidate: string | undefined;
   await mutate(id, (p) => {
     const have = new Set(p.items.map((i) => i.id));
     const fresh = dedupe(items).filter((i) => !have.has(i.id));
     added = fresh.length;
     p.items = [...p.items, ...fresh];
-    if (!p.cover) p.cover = fresh.find((i) => i.logo)?.logo;
+    if (!p.cover) {
+      coverCandidate = fresh.find((i) => i.logo)?.logo;
+      if (coverCandidate) p.cover = coverCandidate;
+    }
   });
+  if (coverCandidate) snapshotPlaylistCover(id, coverCandidate);
   return added;
 }
 
 export async function removeItem(id: string, itemId: string): Promise<void> {
+  const removed = (await getPlaylist(id))?.items.find((item) => item.id === itemId);
   await mutate(id, (p) => {
     p.items = p.items.filter((i) => i.id !== itemId);
   });
-  setTimeout(() => void gcLocalFiles(), 9000);
+  setTimeout(() => void gcUnusedPlaylistAudio(removed ? [removed] : []), 9000);
 }
 
 export async function moveItem(id: string, itemId: string, dir: -1 | 1): Promise<void> {
@@ -128,12 +155,13 @@ export async function moveItem(id: string, itemId: string, dir: -1 | 1): Promise
   });
 }
 
-/** Удаляет плейлист и возвращает его, чтобы можно было отменить. Файлы с устройства чистятся позже. */
+/** Удаляет плейлист и возвращает его, чтобы можно было отменить; неиспользуемые загрузки очищаются позже. */
 export async function deletePlaylist(id: string): Promise<Playlist | undefined> {
   const p = await getPlaylist(id);
   if (!p) return undefined;
   await db.settings.delete(PL + id);
-  setTimeout(() => void gcLocalFiles(), 9000);
+  // Оставляем время на «Отменить»; общие с другими плейлистами загрузки GC сохранит.
+  setTimeout(() => void gcUnusedPlaylistAudio(p.items), 9000);
   return p;
 }
 
@@ -141,15 +169,20 @@ export async function restorePlaylist(p: Playlist): Promise<void> {
   await save(p);
 }
 
-/** Убирает из офлайн-хранилища файлы с устройства, которых нет ни в одном плейлисте. */
-export async function gcLocalFiles(): Promise<void> {
+/** Удаляет из кэша аудио всех треков «pli:», которые больше не используются ни одним плейлистом. */
+export async function gcUnusedPlaylistAudio(extraItems: PlaylistItem[] = []): Promise<void> {
+  const scope = activeDbName();
   try {
-    const lists = await loadAll();
+    const [lists, offline] = await Promise.all([loadAll(), db.offline.toArray()]);
+    if (scope !== activeDbName()) return;
     const used = new Set(lists.flatMap((p) => p.items.map((i) => itemStationId(i.id))));
-    const off = await db.offline.toArray();
-    for (const o of off) {
-      if (o.stationId.startsWith("pli:lf-") && !used.has(o.stationId)) {
-        await removeVod({ id: o.stationId, url: localUrl(o.stationId.slice(4)) });
+    const urls = new Map(lists.flatMap((p) => p.items.map((i) => [itemStationId(i.id), i.url] as const)));
+    for (const item of extraItems) urls.set(itemStationId(item.id), item.url);
+    for (const item of offline) {
+      if (scope !== activeDbName()) return;
+      if (item.stationId.startsWith("pli:") && !used.has(item.stationId)) {
+        // Удаляем и новый изолированный ключ, и legacy URL-ключ, если он сохранился.
+        await removeVod({ id: item.stationId, url: urls.get(item.stationId) ?? "" });
       }
     }
   } catch {
@@ -209,8 +242,8 @@ export function stationToItem(s: Station): PlaylistItem {
 
 /** Можно ли включить трек без интернета. */
 export function playableOffline(i: PlaylistItem, off: Set<string>): boolean {
-  if (i.local) return true;
-  if (i.kind === "vod") return off.has(itemStationId(i.id));
+  // И свои файлы, и скачанные эпизоды лежат в Cache API; признак local сам по себе кэша не гарантирует.
+  if (i.local || i.kind === "vod") return off.has(itemStationId(i.id));
   return i.kind === "lan" || isLanUrl(i.url);
 }
 
@@ -348,14 +381,29 @@ export async function downloadItems(playlistId: string, items: PlaylistItem[], l
   const aborted = ac.signal.aborted;
   ctl = null;
   setDl(IDLE);
+  // Скачивание могло завершиться уже после удаления трека/плейлиста.
+  await gcUnusedPlaylistAudio(todo);
   if (quota) toast("Не хватило места на устройстве. Удалите лишнее в Настройки → Данные", "error");
   else if (aborted) toast(`Скачивание остановлено: готово ${fin.done} из ${fin.total}`, "info");
   else if (fin.failed) toast(`Скачано ${fin.done}, не удалось ${fin.failed}: сервер не разрешает скачивание (CORS) — такие треки играют только онлайн`, "error");
   else toast(`Готово: скачано ${fin.done} — теперь это работает без интернета`, "ok");
 }
 
-export async function removeOffline(items: PlaylistItem[]): Promise<void> {
-  for (const i of items) if (!i.local) await removeVod({ id: itemStationId(i.id), url: i.url });
+/** Удаляет загрузки этого плейлиста, сохраняя файл, если тот же трек нужен другому плейлисту. */
+export async function removeOffline(items: PlaylistItem[], playlistId: string): Promise<number> {
+  const lists = await listPlaylists();
+  const usedElsewhere = new Set(
+    lists.filter((playlist) => playlist.id !== playlistId).flatMap((playlist) => playlist.items.map((item) => itemStationId(item.id)))
+  );
+  let removed = 0;
+  for (const item of items) {
+    if (item.local) continue;
+    const id = itemStationId(item.id);
+    if (usedElsewhere.has(id)) continue;
+    await removeVod({ id, url: item.url });
+    removed++;
+  }
+  return removed;
 }
 
 /* ------------------------------------ подписки на подкасты ------------------------------------ */
@@ -367,10 +415,15 @@ export async function refreshFollow(p: Playlist): Promise<number> {
   const eps = await showEpisodes({ id: f.showId, name: f.name, artist: f.artist, art: f.art, genre: f.genre, episodes: 0 }, f.country, undefined, 60);
   const have = new Set(p.items.map((i) => i.id));
   const fresh = eps.filter((e) => !have.has(e.id)).map(episodeToItem);
+  let coverCandidate: string | undefined;
   await mutate(p.id, (pl) => {
     pl.items = [...fresh, ...pl.items];
-    if (!pl.cover && f.art) pl.cover = f.art;
+    if (!pl.cover && f.art) {
+      pl.cover = f.art;
+      coverCandidate = f.art;
+    }
     if (pl.follow) pl.follow.checkedAt = Date.now();
   });
+  if (coverCandidate) snapshotPlaylistCover(p.id, coverCandidate);
   return fresh.length;
 }

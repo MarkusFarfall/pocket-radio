@@ -5,7 +5,7 @@ import { Cover } from "./ui";
 
 type Pl = Pick<Playlist, "name" | "cover" | "items" | "follow"> & { id?: string };
 
-/** Надёжная обложка: своя картинка, затем мозаика, затем генеративный фон. */
+/** Одна главная обложка: выбранная вручную, затем обложка подписки и первого трека. */
 export function PlaylistArtwork({ playlist, className, eager = false }: { playlist: Pl; className?: string; eager?: boolean }) {
   const [bad, setBad] = useState<Set<string>>(new Set());
   const images = useMemo(() => {
@@ -25,17 +25,7 @@ export function PlaylistArtwork({ playlist, className, eager = false }: { playli
 
   return (
     <div className={cn("cover relative h-full w-full overflow-hidden rounded-xl bg-surface-2", className)} aria-hidden>
-      {images.length === 1 ? (
-        image(images[0], 0)
-      ) : images.length >= 2 ? (
-        <div className="grid h-full w-full grid-cols-2 grid-rows-2 gap-px bg-line">
-          {[0, 1, 2, 3].map((i) =>
-            images[i] ? image(images[i], i) : <Cover key={i} s={{ name: `${playlist.name}${i}`, kind: "vod", icon: podcast ? "g:podcast" : "g:music" }} size="fill" className="!rounded-none" />
-          )}
-        </div>
-      ) : (
-        <Cover s={{ name: playlist.name, kind: "vod", icon: podcast ? "g:podcast" : "g:music" }} size="fill" className="!rounded-none" />
-      )}
+      {images[0] ? image(images[0], 0) : <Cover s={{ name: playlist.name, kind: "vod", icon: podcast ? "g:podcast" : "g:music" }} size="fill" className="!rounded-none" />}
       <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-black/10" />
     </div>
   );

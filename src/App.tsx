@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, FileUp, Keyboard, MoreHorizontal, Plus, Search as SearchIcon, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, FileUp, Keyboard, MoreHorizontal, Plus, Wifi, WifiOff } from "lucide-react";
 import type { Draft, Station } from "./lib/types";
 import { useOfflineItems, useOnline, useStations } from "./lib/hooks";
+import { reconcileOfflineCache } from "./lib/offline";
 import { player, usePlayer } from "./lib/player";
 import { hueOf, parseShare } from "./lib/templates";
 import { toast } from "./lib/toast";
@@ -20,7 +21,6 @@ import { StationForm } from "./components/StationForm";
 import { StationMenu } from "./components/StationMenu";
 import { QrScanModal, QrShowModal } from "./components/Share";
 import { ShortcutsModal } from "./components/Shortcuts";
-import { SearchPalette } from "./components/SearchPalette";
 import { PlaylistPicker } from "./components/PlaylistPicker";
 import { OfflineOfferModal, RecoveryOfferModal } from "./components/OfflineOffer";
 import { AccountCard, AccountModal, Avatar } from "./components/AccountUI";
@@ -60,9 +60,7 @@ export default function App() {
   const [scanOpen, setScanOpen] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [discoverKey, setDiscoverKey] = useState(0);
   const [plKey, setPlKey] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
   const restored = useRef(false);
@@ -81,6 +79,11 @@ export default function App() {
       });
     }
   }, [stations, loaded]);
+
+  // Cache API и IndexedDB вытесняются/очищаются отдельно; при старте убираем ложные «офлайн» метки.
+  useEffect(() => {
+    if (loaded) void reconcileOfflineCache();
+  }, [auth.scope, loaded]);
 
   const openAdd = useCallback(() => {
     setEditing(null);
@@ -135,13 +138,13 @@ export default function App() {
 
   useHotkeys({
     openAdd,
-    openPalette: () => setPaletteOpen(true),
-    togglePalette: () => setPaletteOpen((o) => !o),
     openHelp: () => setHelpOpen(true),
     goTab: setTab,
     back: history.back,
     forward: history.forward,
-    togglePanel: () => setDesktopPrefs({ panel: !getDesktopPrefs().panel }),
+    togglePanel: () => {
+      if (player.getState().station) setDesktopPrefs({ panel: !getDesktopPrefs().panel });
+    },
   });
 
   useEffect(() => {
@@ -154,16 +157,6 @@ export default function App() {
     setFormOpen(true);
     setPlayerOpen(false);
   };
-
-  const searchOnline = useCallback(
-    (q: string) => {
-      localStorage.setItem("radio.discoverTab", "search");
-      localStorage.setItem("radio.searchQ", q);
-      setDiscoverKey((k) => k + 1);
-      setTab("discover");
-    },
-    [setTab]
-  );
 
   const onPlay = useCallback((s: Station, queue: string[]) => {
     const cur = player.getState();
@@ -215,7 +208,7 @@ export default function App() {
   ) : tab === "playlists" ? (
     <Playlists key={plKey} {...view} />
   ) : tab === "discover" ? (
-    <Discover key={discoverKey} {...view} />
+    <Discover {...view} />
   ) : tab === "stats" ? (
     <Stats stations={stations} />
   ) : (
@@ -246,7 +239,6 @@ export default function App() {
       <PlaylistPicker />
       <OfflineOfferModal />
       <RecoveryOfferModal />
-      <SearchPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} stations={stations} onPlay={onPlay} go={setTab} onAdd={openAdd} onSearchOnline={searchOnline} />
       <Modal open={moreOpen} onClose={() => setMoreOpen(false)} size="sm" title="Ещё">
         <div className="space-y-1 p-3">
           {NAV.filter((n) => n.id === "stats" || n.id === "settings").map((n) => (
@@ -312,7 +304,6 @@ export default function App() {
           online={online}
           onPlay={onPlay}
           onAdd={openAdd}
-          openPalette={() => setPaletteOpen(true)}
           openHelp={() => setHelpOpen(true)}
           openAccount={() => setAccountOpen(true)}
           openPlayer={() => setPlayerOpen(true)}
@@ -410,9 +401,6 @@ export default function App() {
               {tab === "playlists" ? "Музыка и подкасты" : online ? "Pocket Radio" : "Нет интернета · доступен офлайн-режим"}
             </div>
           </div>
-          <button onClick={() => setPaletteOpen(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink transition active:scale-95" aria-label="Поиск">
-            <SearchIcon size={19} />
-          </button>
           <button onClick={openAdd} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink shadow-md transition active:scale-95" aria-label="Добавить станцию">
             <Plus size={21} />
           </button>
@@ -439,15 +427,7 @@ export default function App() {
               </nav>
             </>
           )}
-          <button
-            onClick={() => setPaletteOpen(true)}
-            className={cn("flex items-center gap-3 rounded-xl border border-line bg-bg px-4 py-2.5 text-sm text-muted transition hover:border-ink/30 hover:text-ink", layout === "top" ? "ml-auto w-72" : "w-full max-w-lg")}
-          >
-            <SearchIcon size={17} />
-            <span className="truncate">Поиск станций, жанров, команд…</span>
-            <kbd className="ml-auto rounded-md border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px]">Ctrl K</kbd>
-          </button>
-          <div className={cn("flex items-center gap-3", layout !== "top" && "ml-auto")}>
+          <div className="ml-auto flex items-center gap-3">
             {OnlinePill}
             <button onClick={() => setHelpOpen(true)} className="rounded-full p-2 text-muted transition hover:bg-surface-2 hover:text-ink" aria-label="Горячие клавиши" title="Горячие клавиши (?)">
               <Keyboard size={19} />

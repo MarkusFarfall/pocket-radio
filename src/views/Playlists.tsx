@@ -13,7 +13,7 @@ import {
   downloadItems,
   downloadable,
   exportPlaylistM3U,
-  gcLocalFiles,
+  gcUnusedPlaylistAudio,
   itemStationId,
   moveItem,
   playlistSeconds,
@@ -39,12 +39,12 @@ type PlLike = Pick<Playlist, "name" | "items" | "follow" | "cover">;
 
 const isPodcast = (p: PlLike) => !!p.follow || (p.items.length > 0 && p.items.every((i) => i.genre === "Подкасты"));
 
-/** Обложка плейлиста: мозаика из четырёх обложек или одна. */
+/** Одна обложка плейлиста: своя, либо автоматически выбранная с первого трека. */
 function PlCover({ p, size }: { p: PlLike; size: number | "fill" }) {
   return <div className="h-full w-full" style={size === "fill" ? undefined : { width: size, height: size }}><PlaylistArtwork playlist={p} eager /></div>;
 }
 
-const isOff = (i: PlaylistItem, off: Set<string>) => !!i.local || off.has(itemStationId(i.id));
+const isOff = (i: PlaylistItem, off: Set<string>) => off.has(itemStationId(i.id));
 
 /* ------------------------------------ карточка в сетке ------------------------------------ */
 
@@ -169,6 +169,7 @@ function Detail({ pl, off, online, onBack, onEdit }: { pl: Playlist; off: Set<st
   };
 
   const remove = async () => {
+    if (mine) cancelDownloads();
     const copy = await deletePlaylist(pl.id);
     onBack();
     if (copy) toast(`Плейлист «${copy.name}» удалён`, "info", { label: "Вернуть", run: () => void restorePlaylist(copy) });
@@ -355,7 +356,15 @@ function Detail({ pl, off, online, onBack, onEdit }: { pl: Playlist; off: Set<st
             <FileDown size={18} className="text-muted" /> Экспортировать M3U
           </button>
           {dlDone > 0 && (
-            <button className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium hover:bg-surface-2" onClick={() => (setActionsOpen(false), void removeOffline(pl.items).then(() => toast("Загрузки удалены, плейлист остался", "info")))}>
+            <button
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium hover:bg-surface-2"
+              onClick={() =>
+                (setActionsOpen(false),
+                void removeOffline(pl.items, pl.id).then((n) =>
+                  toast(n ? `Удалено загрузок: ${n}; общие треки сохранены` : "Общие треки ещё нужны другим плейлистам — загрузки оставлены", "info")
+                ))
+              }
+            >
               <Trash2 size={18} className="text-muted" /> Удалить скачанные файлы
             </button>
           )}
@@ -404,7 +413,7 @@ export function Playlists({ online, go }: ViewProps) {
 
   useEffect(() => {
     sessionStorage.removeItem("pr.openPlaylist");
-    void gcLocalFiles();
+    void gcUnusedPlaylistAudio();
   }, []);
 
   // подписки: тихо проверяем новые серии не чаще раза в 6 часов
@@ -512,7 +521,7 @@ export function Playlists({ online, go }: ViewProps) {
                 )}
               </div>
             </div>
-            <p className="mt-2 text-xs text-muted">Картинка обрезается до квадрата и сохраняется внутри плейлиста, поэтому не пропадёт без интернета.</p>
+            <p className="mt-2 text-xs text-muted">Выбранное фото обрезается и сохраняется внутри плейлиста. Автоматические обложки из сети могут зависеть от доступности источника.</p>
           </div>
           <label className="block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Название</span>

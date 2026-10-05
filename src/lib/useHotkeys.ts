@@ -7,8 +7,6 @@ import type { Tab } from "../views/shared";
 
 export interface HotkeyActions {
   openAdd(): void;
-  openPalette(): void;
-  togglePalette(): void;
   openHelp(): void;
   goTab(t: Tab): void;
   back(): void;
@@ -24,11 +22,6 @@ export function useHotkeys(actions: HotkeyActions) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const a = ref.current;
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        a.togglePalette();
-        return;
-      }
       const t = e.target as HTMLElement;
       const typing = !!t.closest("input, textarea, select, [contenteditable=true]");
       const dialog = !!document.querySelector('[role="dialog"]');
@@ -81,10 +74,6 @@ export function useHotkeys(actions: HotkeyActions) {
         case "з":
         case "З":
           a.togglePanel();
-          break;
-        case "/":
-          e.preventDefault();
-          a.openPalette();
           break;
         case "a":
         case "A":

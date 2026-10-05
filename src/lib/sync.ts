@@ -1,5 +1,6 @@
 import { exportJSON, importJSON } from "./db";
-import { currentUserId, getAccessToken, supabaseConfig, supabaseConfigured } from "./auth/supabase";
+import { currentUserId, getAccessToken, supabaseConfig } from "./auth/supabase";
+import { provider } from "./auth";
 
 /**
  * ЗАГОТОВКА облачной синхронизации (Supabase).
@@ -16,7 +17,7 @@ import { currentUserId, getAccessToken, supabaseConfig, supabaseConfigured } fro
 
 const LAST_KEY = "pr.lastSync";
 
-export const syncAvailable = () => supabaseConfigured;
+export const syncAvailable = () => provider.id === "supabase";
 export const lastSyncAt = (): number | null => Number(localStorage.getItem(LAST_KEY)) || null;
 
 async function rest<T>(path: string, init: RequestInit = {}): Promise<T> {

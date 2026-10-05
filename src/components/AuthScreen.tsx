@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useId, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { ArrowLeft, ChartColumn, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MailCheck, Radio, TriangleAlert, WifiOff } from "lucide-react";
 import { useAuth } from "../lib/auth/AuthContext";
 import { AuthError } from "../lib/auth";
@@ -47,33 +47,41 @@ function TextField({
   );
 }
 
-function PasswordField({ label, error, hint, ...props }: { label: string; error?: string; hint?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
+function PasswordField({ label, error, hint, id, ...props }: { label: string; error?: string; hint?: ReactNode } & InputHTMLAttributes<HTMLInputElement>) {
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
   const [show, setShow] = useState(false);
   const [caps, setCaps] = useState(false);
+  const descriptionId = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
   return (
-    <label className="block">
-      <span className="mb-1.5 flex items-center justify-between text-sm font-semibold">
-        {label}
+    <div className="block">
+      <label htmlFor={inputId} className="mb-1.5 flex items-center justify-between text-sm font-semibold">
+        <span>{label}</span>
         {caps && <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Включён Caps Lock</span>}
-      </span>
+      </label>
       <span className="relative block">
         <input
           {...props}
+          id={inputId}
           type={show ? "text" : "password"}
           aria-invalid={!!error}
-          onKeyUp={(e) => setCaps(e.getModifierState?.("CapsLock") ?? false)}
+          aria-describedby={descriptionId}
+          onKeyUp={(e) => {
+            setCaps(e.getModifierState?.("CapsLock") ?? false);
+            props.onKeyUp?.(e);
+          }}
           onBlur={(e) => {
             setCaps(false);
             props.onBlur?.(e);
           }}
           className={cn(inputCls, "!py-3 pr-12", error && "!border-bad ring-2 ring-bad/15")}
         />
-        <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-muted transition hover:text-ink" aria-label={show ? "Скрыть пароль" : "Показать пароль"} tabIndex={-1}>
+        <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-muted transition hover:text-ink" aria-label={show ? "Скрыть пароль" : "Показать пароль"} aria-pressed={show}>
           {show ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
       </span>
-      {error ? <span className="mt-1.5 block text-xs font-medium text-bad">{error}</span> : hint ? <span className="mt-1.5 block text-xs text-muted">{hint}</span> : null}
-    </label>
+      {error ? <span id={descriptionId} className="mt-1.5 block text-xs font-medium text-bad">{error}</span> : hint ? <span id={descriptionId} className="mt-1.5 block text-xs text-muted">{hint}</span> : null}
+    </div>
   );
 }
 

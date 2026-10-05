@@ -202,27 +202,29 @@ export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, on
       ) : (
         <>
           <div className="sticky top-0 z-10 -mx-4 bg-bg/90 px-4 pb-2 pt-2 backdrop-blur-xl md:-mx-8 md:px-8">
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
+            <div className="flex flex-wrap gap-2">
+              <div className="relative min-w-0 basis-full flex-1 sm:basis-auto">
                 <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-                <input data-search className={cn(inputCls, "pl-10")} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по каталогу" />
+                <input data-search className={cn(inputCls, "w-full pl-10")} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по каталогу" />
                 {q && (
                   <button onClick={() => setQ("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
                     <X size={16} />
                   </button>
                 )}
               </div>
-              <button onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen} className={cn(btnGhost, "relative !px-3.5", filtersOpen && "!border-accent !text-accent")}>
-                <SlidersHorizontal size={17} />
-                <span className="hidden sm:inline">Фильтры</span>
-                {activeCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-bold text-accent-ink">{activeCount}</span>}
-              </button>
-              <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={cn(inputCls, "w-auto cursor-pointer pr-8")} aria-label="Сортировка">
-                <option value="added">Новые</option>
-                <option value="name">А–Я</option>
-                <option value="listened">По времени</option>
-                <option value="recent">Недавние</option>
-              </select>
+              <div className="flex w-full min-w-0 gap-2 sm:w-auto">
+                <button onClick={() => setFiltersOpen((o) => !o)} aria-expanded={filtersOpen} className={cn(btnGhost, "relative !px-3.5", filtersOpen && "!border-accent !text-accent")}>
+                  <SlidersHorizontal size={17} />
+                  <span>Фильтры</span>
+                  {activeCount > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-bold text-accent-ink">{activeCount}</span>}
+                </button>
+                <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={cn(inputCls, "min-w-0 flex-1 cursor-pointer pr-8 sm:flex-none sm:w-auto")} aria-label="Сортировка">
+                  <option value="added">Новые</option>
+                  <option value="name">А–Я</option>
+                  <option value="listened">По времени</option>
+                  <option value="recent">Недавние</option>
+                </select>
+              </div>
               <div className="hidden shrink-0 overflow-hidden rounded-xl border border-line bg-bg sm:flex">
                 {(
                   [

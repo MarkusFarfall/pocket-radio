@@ -100,48 +100,50 @@ export function HomeStudio(props: ViewProps) {
         </button>
       </div>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_21rem]">
-        <div className="relative overflow-hidden rounded-3xl p-7 text-white" style={{ background: `linear-gradient(120deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 44% 11%))` }}>
-          <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full opacity-30 blur-3xl" style={{ background: `hsl(${hue} 80% 60%)` }} />
-          <div className="relative flex items-center gap-7">
-            <Cover s={hero} size={176} className="rounded-2xl shadow-2xl ring-1 ring-white/20" spin={heroActive} />
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">{last ? "Продолжить слушать" : favs.length ? "Из избранного" : "Попробуйте"}</div>
-              <h2 className="mt-2 truncate font-display text-4xl font-bold tracking-tight">{hero.name}</h2>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/70">
-                <KindBadge kind={hero.kind} className="!bg-white/15 !text-white" />
-                {[hero.genre, hero.city].filter(Boolean).join(" · ")}
-                {hero.kind === "vod" && hero.resumePos ? ` · с ${fmtClock(hero.resumePos)}` : hero.totalSeconds > 60 ? ` · слушали ${fmtDuration(hero.totalSeconds, true)}` : ""}
-              </div>
-              {hero.note && <p className="mt-3 line-clamp-2 max-w-xl text-sm text-white/70">{hero.note}</p>}
-              <div className="mt-6 flex items-center gap-3">
-                <button onClick={() => onPlay(hero, heroQueue)} className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-neutral-900 shadow-xl transition hover:scale-[1.03] active:scale-95">
-                  {heroActive ? <Pause size={18} className="fill-current" /> : <Play size={18} className="ml-0.5 fill-current" />} {heroActive ? "Пауза" : "Слушать"}
-                </button>
-                <button onClick={() => go("catalog")} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-5 py-3 text-sm font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/25">
-                  <LayoutGrid size={16} /> Весь каталог
-                </button>
+      <div className="home-feature-container">
+        <section className="home-feature-grid gap-4" data-home-feature>
+          <div data-home-hero className="relative min-w-0 overflow-hidden rounded-3xl p-7 text-white" style={{ background: `linear-gradient(120deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 44% 11%))` }}>
+            <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full opacity-30 blur-3xl" style={{ background: `hsl(${hue} 80% 60%)` }} />
+            <div className="relative flex items-center gap-7">
+              <Cover s={hero} size={176} className="rounded-2xl shadow-2xl ring-1 ring-white/20" spin={heroActive} />
+              <div data-home-hero-copy className="min-w-0 flex-1">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">{last ? "Продолжить слушать" : favs.length ? "Из избранного" : "Попробуйте"}</div>
+                <h2 className="mt-2 truncate font-display text-4xl font-bold tracking-tight">{hero.name}</h2>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-white/70">
+                  <KindBadge kind={hero.kind} className="!bg-white/15 !text-white" />
+                  {[hero.genre, hero.city].filter(Boolean).join(" · ")}
+                  {hero.kind === "vod" && hero.resumePos ? ` · с ${fmtClock(hero.resumePos)}` : hero.totalSeconds > 60 ? ` · слушали ${fmtDuration(hero.totalSeconds, true)}` : ""}
+                </div>
+                {hero.note && <p className="mt-3 line-clamp-2 max-w-xl text-sm text-white/70">{hero.note}</p>}
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <button onClick={() => onPlay(hero, heroQueue)} className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-neutral-900 shadow-xl transition hover:scale-[1.03] active:scale-95">
+                    {heroActive ? <Pause size={18} className="fill-current" /> : <Play size={18} className="ml-0.5 fill-current" />} {heroActive ? "Пауза" : "Слушать"}
+                  </button>
+                  <button onClick={() => go("catalog")} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-5 py-3 text-sm font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/25">
+                    <LayoutGrid size={16} /> Весь каталог
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="rounded-3xl border border-line bg-surface p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-display text-lg font-semibold">Сегодня</h3>
-            <span className="text-xs text-muted">{new Date().toLocaleDateString("ru", { day: "numeric", month: "long" })}</span>
+          <div className="rounded-3xl border border-line bg-surface p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-display text-lg font-semibold">Сегодня</h3>
+              <span className="text-xs text-muted">{new Date().toLocaleDateString("ru", { day: "numeric", month: "long" })}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Stat icon={Clock} label="Эфир" value={today > 0 ? fmtDuration(today, true) : "0 м"} />
+              <Stat icon={Flame} label="Серия" value={`${streak} дн.`} />
+              <Stat icon={LayoutGrid} label="Станций" value={String(stations.length)} />
+              <Stat icon={BookmarkCheck} label="Треков" value={String(tracks.length)} />
+            </div>
+            <button onClick={() => go("stats")} className="mt-3 w-full rounded-xl py-2 text-sm font-semibold text-accent transition hover:bg-accent/10">
+              Вся статистика
+            </button>
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <Stat icon={Clock} label="Эфир" value={today > 0 ? fmtDuration(today, true) : "0 м"} />
-            <Stat icon={Flame} label="Серия" value={`${streak} дн.`} />
-            <Stat icon={LayoutGrid} label="Станций" value={String(stations.length)} />
-            <Stat icon={BookmarkCheck} label="Треков" value={String(tracks.length)} />
-          </div>
-          <button onClick={() => go("stats")} className="mt-3 w-full rounded-xl py-2 text-sm font-semibold text-accent transition hover:bg-accent/10">
-            Вся статистика
-          </button>
-        </div>
-      </section>
+        </section>
+      </div>
 
       <section>
         <SectionTitle
