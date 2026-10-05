@@ -37,25 +37,35 @@ async function archiveDocs(page: Page, docs: ArchiveDoc[] | ((query: string) => 
   return queries;
 }
 
-test("quick offline music search submits a Russian-labeled genre suggestion", async ({ page }) => {
-  await archiveDocs(page, [
-    { identifier: "jazz-night", title: "Jazz Night", creator: "Jazz Ensemble", subject: "jazz", downloads: 250, collection: ["opensource_audio"] },
-  ]);
+test("offline music search understands Russian genre names and one-tap genre shortcuts", async ({ page }) => {
+  const queries = await archiveDocs(page, (query) => {
+    if (query.includes("subject:rock")) return [{ identifier: "rock-night", title: "Rock Night", creator: "The Rockers", subject: "rock", downloads: 210, collection: ["opensource_audio"] }];
+    if (query.includes("subject:jazz")) return [{ identifier: "jazz-night", title: "Jazz Night", creator: "Jazz Ensemble", subject: "jazz", downloads: 250, collection: ["opensource_audio"] }];
+    return [];
+  });
 
   await openCollections(page);
-  const artistInput = page.getByLabel("Запрос для поиска офлайн-музыки");
-  await expect(artistInput).toHaveAttribute("placeholder", "Например: Кино, Михаил Круг, a-ha");
+  const searchInput = page.getByLabel("Запрос для поиска офлайн-музыки");
+  await expect(page.getByRole("button", { name: "Везде" })).toHaveAttribute("aria-pressed", "true");
+  await expect(searchInput).toHaveAttribute("placeholder", "Например: рок, джаз, Кино или альбом");
   await expect(page.getByRole("button", { name: "Быстрый поиск: Кино" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Быстрый поиск: Михаил Круг" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Быстрый поиск: Земфира" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Быстрый поиск жанра: Рок" })).toBeVisible();
   await expect(page.locator('#offline-music-search-suggestions option[value="Кино"]')).toHaveCount(1);
 
-  await page.getByRole("button", { name: "По названию / жанру" }).click();
-  await page.getByRole("button", { name: "Быстрый поиск: Джаз" }).click();
+  await searchInput.fill("рок");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Жанр: Рок" })).toBeVisible();
+  await expect(page.getByText("Rock Night", { exact: true })).toBeVisible();
+  await expect(searchInput).toHaveValue("рок");
+  expect(queries.some((query) => query.includes("subject:rock"))).toBe(true);
 
-  await expect(page.getByRole("heading", { name: "«jazz»" })).toBeVisible();
+  await page.getByRole("button", { name: "Быстрый поиск жанра: Джаз" }).click();
+  await expect(page.getByRole("heading", { name: "Жанр: Джаз" })).toBeVisible();
   await expect(page.getByText("Jazz Night", { exact: true })).toBeVisible();
-  await expect(page.getByRole("search", { name: "Поиск музыки офлайн" }).getByLabel("Запрос для поиска офлайн-музыки")).toHaveValue("jazz");
+  await expect(searchInput).toHaveValue("Джаз");
+  expect(queries.some((query) => query.includes("subject:jazz"))).toBe(true);
 });
 
 test("Кино suggestion searches Latin Archive metadata from a Russian query", async ({ page }) => {
@@ -82,7 +92,8 @@ test("artist search keeps A-ha results precise and drops noisy Archive metadata"
   ]);
 
   await openCollections(page);
-  await expect(page.getByRole("button", { name: "По исполнителю" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Исполнитель", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Исполнитель", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Запрос для поиска офлайн-музыки").fill("a-ha");
   await page.getByRole("button", { name: "Найти", exact: true }).click();
 
@@ -105,13 +116,13 @@ test("all-fields search uses an exact phrase rather than matching isolated words
   ]);
 
   await openCollections(page);
-  await page.getByRole("button", { name: "По названию / жанру" }).click();
-  await page.getByPlaceholder("Название альбома, песни или жанр").fill("Talk Talk");
+  await expect(page.getByRole("button", { name: "Везде", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByPlaceholder("Например: рок, джаз, Кино или альбом").fill("Talk Talk");
   await page.getByRole("button", { name: "Найти", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "«Talk Talk»" })).toBeVisible();
   await expect(page.getByText("Spirit of Eden", { exact: true })).toBeVisible();
-  await expect(page.getByText("Talk Talk", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Talk Talk Various artists/ })).toBeVisible();
   await expect(page.getByText("Talk to Me", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Talking Heads", { exact: true })).toHaveCount(0);
   expect(queries[0]).toContain('title:"Talk Talk"');
@@ -133,6 +144,7 @@ test("artist search keeps Talk Talk creator matches ahead of title-only mentions
   const queries = await archiveDocs(page, docs);
 
   await openCollections(page);
+  await page.getByRole("button", { name: "Исполнитель", exact: true }).click();
   await page.getByLabel("Запрос для поиска офлайн-музыки").fill("Talk Talk");
   await page.getByRole("button", { name: "Найти", exact: true }).click();
 
@@ -182,6 +194,7 @@ test("smart artist search finds Zemfira variants and Mikhail Krug when creator m
   });
 
   await openCollections(page);
+  await page.getByRole("button", { name: "Исполнитель", exact: true }).click();
   const input = page.getByLabel("Запрос для поиска офлайн-музыки");
   const find = page.getByRole("button", { name: "Найти", exact: true });
 

@@ -66,8 +66,15 @@ test("station categories are Russian and category filters remain combined with s
   const categories = page.getByLabel("Жанр или тема");
   await expect(categories.getByRole("option", { name: "Джаз", exact: true })).toBeAttached();
   await expect(categories.getByRole("option", { name: "Даунтемпо", exact: true })).toBeAttached();
+  await expect(categories.getByRole("option", { name: "Религиозные", exact: true })).toBeAttached();
+  await expect(categories.getByRole("option", { name: "Детские", exact: true })).toBeAttached();
   await expect(categories.getByRole("option", { name: "jazz", exact: true })).toHaveCount(0);
   await expect(categories.getByRole("option", { name: "very-rare-raw-tag", exact: true })).toHaveCount(0);
+
+  await categories.selectOption("religious");
+  await expect.poll(() => stationQueries.some((url) => url.searchParams.get("tag") === "religious")).toBe(true);
+  await categories.selectOption("children");
+  await expect.poll(() => stationQueries.some((url) => url.searchParams.get("tag") === "children")).toBe(true);
 
   await categories.selectOption("jazz");
   await expect.poll(() => stationQueries.some((url) => url.searchParams.get("tag") === "jazz")).toBe(true);

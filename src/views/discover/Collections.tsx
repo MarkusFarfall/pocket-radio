@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Disc3, Download, FileAudio, ListMusic, ListPlus, Loader2, Pause, Play, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
 import type { PlaylistItem } from "../../lib/types";
 import type { ViewProps } from "../shared";
-import { COLLECTIONS, COLLECTION_GROUPS, albumTracks, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope } from "../../lib/archive";
+import { ARCHIVE_GENRES, COLLECTIONS, COLLECTION_GROUPS, albumTracks, findArchiveGenre, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope, type ArchiveGenre } from "../../lib/archive";
 import { GLYPHS } from "../../lib/glyphs";
 import { createPlaylist, downloadItems, itemStationId, itemToStation } from "../../lib/playlists";
 import { gotoPlaylist, openPicker } from "../../lib/picker";
@@ -21,12 +21,7 @@ const QUICK_OFFLINE_SEARCHES = {
     { query: "Михаил Круг", label: "Михаил Круг" },
     { query: "Talk Talk", label: "Talk Talk" },
   ],
-  all: [
-    { query: "jazz", label: "Джаз" },
-    { query: "classical", label: "Классика" },
-    { query: "ambient", label: "Эмбиент" },
-    { query: "rock", label: "Рок" },
-  ],
+  all: ARCHIVE_GENRES.map((genre) => ({ query: genre.label, label: genre.label })),
 };
 
 function AlbumCover({ album, size }: { album: Pick<Album, "title" | "thumb" | "cover">; size: number }) {
@@ -290,11 +285,13 @@ interface Active {
   query: string;
   text?: string;
   scope?: AlbumSearchScope;
+  genre?: ArchiveGenre;
 }
 
 export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewProps["onPlay"] }) {
   const [text, setText] = useState("");
-  const [scope, setScope] = useState<AlbumSearchScope>("artist");
+  const [scope, setScope] = useState<AlbumSearchScope>("all");
+  const [showAllGenres, setShowAllGenres] = useState(false);
   const [active, setActive] = useState<Active | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [page, setPage] = useState(1);
@@ -311,9 +308,11 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
     setLoading(true);
     setError(null);
     try {
-      const r = a.text !== undefined && a.scope
-        ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
-        : await searchAlbums(a.query, pg, c.signal);
+      const r = a.genre
+        ? await searchAlbums(a.genre.query, pg, c.signal)
+        : a.text !== undefined && a.scope
+          ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
+          : await searchAlbums(a.query, pg, c.signal);
       if (c.signal.aborted) return;
       setAlbums((prev) => (pg === 1 ? r.albums : [...prev, ...r.albums.filter((x) => !prev.some((p) => p.id === x.id))]));
       setMore(r.hasMore);
@@ -334,15 +333,38 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
 
   const submit = (rawText = text, searchScope = scope) => {
     const value = rawText.trim();
-    const query = textQuery(value, searchScope);
-    if (query) setActive({ title: `«${value}»`, query, text: value, scope: searchScope });
+    const genre = searchScope === "all" ? findArchiveGenre(value) : undefined;
+    const query = genre?.query ?? textQuery(value, searchScope);
+    if (query) {
+      setActive({
+        title: genre ? `Жанр: ${genre.label}` : `«${value}»`,
+        query,
+        text: value,
+        scope: searchScope,
+        genre,
+      });
+    }
   };
 
   const broadenSearch = () => {
     if (!active?.text) return;
-    const query = textQuery(active.text, "all");
+    const genre = findArchiveGenre(active.text);
+    const query = genre?.query ?? textQuery(active.text, "all");
     setScope("all");
-    setActive({ ...active, query, scope: "all" });
+    setActive({ ...active, title: genre ? `Жанр: ${genre.label}` : active.title, query, scope: "all", genre });
+  };
+
+  const switchScope = (nextScope: AlbumSearchScope) => {
+    setScope(nextScope);
+    if (active?.text) submit(text.trim() || active.text, nextScope);
+  };
+
+  const clearSearch = () => {
+    setText("");
+    setActive(null);
+    setAlbums([]);
+    setError(null);
+    setMore(false);
   };
 
   if (!online)
@@ -354,24 +376,26 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
       </div>
     );
 
+  const visibleGenres = showAllGenres ? QUICK_OFFLINE_SEARCHES.all : QUICK_OFFLINE_SEARCHES.all.slice(0, 8);
+
   const search = (
     <div className="space-y-2.5">
       <div role="group" aria-label="Тип поиска" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1">
         <button
           type="button"
-          aria-pressed={scope === "artist"}
-          onClick={() => setScope("artist")}
-          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "artist" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
+          aria-pressed={scope === "all"}
+          onClick={() => switchScope("all")}
+          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "all" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
         >
-          По исполнителю
+          Везде
         </button>
         <button
           type="button"
-          aria-pressed={scope === "all"}
-          onClick={() => setScope("all")}
-          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "all" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
+          aria-pressed={scope === "artist"}
+          onClick={() => switchScope("artist")}
+          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "artist" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
         >
-          По названию / жанру
+          Исполнитель
         </button>
       </div>
       <form
@@ -392,15 +416,17 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             className={cn(inputCls, "pl-10 pr-9")}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={scope === "artist" ? "Например: Кино, Михаил Круг, a-ha" : "Название альбома, песни или жанр"}
+            placeholder={scope === "artist" ? "Например: Кино, Михаил Круг, a-ha" : "Например: рок, джаз, Кино или альбом"}
           />
           {text && (
-            <button type="button" onClick={() => setText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
+            <button type="button" onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить запрос">
               <X size={16} />
             </button>
           )}
           <datalist id="offline-music-search-suggestions">
-            {QUICK_OFFLINE_SEARCHES[scope].map((suggestion) => <option key={suggestion.query} value={suggestion.query} />)}
+            {[...QUICK_OFFLINE_SEARCHES[scope], ...(scope === "all" ? QUICK_OFFLINE_SEARCHES.artist : [])].map((suggestion) => (
+              <option key={suggestion.query} value={suggestion.query} />
+            ))}
           </datalist>
         </div>
         <button type="submit" className={btnPrimary} disabled={!textQuery(text, scope)}>
@@ -409,22 +435,46 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
       </form>
       <p className="text-xs leading-relaxed text-muted">
         {scope === "artist"
-          ? "Ищем точного исполнителя, учитываем варианты латиницей и при нехватке данных проверяем названия."
-          : "Ищем точную фразу в имени исполнителя, названии и темах."}
+          ? "Уточнённый поиск по исполнителю. Не уверены в написании? Попробуйте режим «Везде»."
+          : "Ищем сразу по исполнителю, названию и жанру. Можно вводить жанр по-русски или выбрать его ниже."}
       </p>
-      <div role="group" className="flex flex-wrap items-center gap-1.5" aria-label="Популярные запросы">
-        <span className="mr-0.5 text-xs text-muted">Попробуйте:</span>
-        {QUICK_OFFLINE_SEARCHES[scope].map((suggestion) => (
+      <div className="space-y-2">
+        <div role="group" className="flex flex-wrap items-center gap-1.5" aria-label="Популярные жанры">
+          <span className="mr-0.5 text-xs font-semibold text-muted">Жанры:</span>
+          {visibleGenres.map((suggestion) => (
+            <button
+              key={suggestion.query}
+              type="button"
+              aria-label={`Быстрый поиск жанра: ${suggestion.label}`}
+              onClick={() => { setScope("all"); setText(suggestion.query); submit(suggestion.query, "all"); }}
+              className="rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-accent/40 hover:text-accent"
+            >
+              {suggestion.label}
+            </button>
+          ))}
           <button
-            key={suggestion.query}
             type="button"
-            aria-label={`Быстрый поиск: ${suggestion.label}`}
-            onClick={() => { setText(suggestion.query); submit(suggestion.query, scope); }}
-            className="rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-accent/40 hover:text-accent"
+            aria-expanded={showAllGenres}
+            onClick={() => setShowAllGenres((shown) => !shown)}
+            className="rounded-full border border-dashed border-line px-2.5 py-1 text-xs font-semibold text-accent transition hover:border-accent/40"
           >
-            {suggestion.label}
+            {showAllGenres ? "Свернуть" : `Ещё жанры · ${QUICK_OFFLINE_SEARCHES.all.length - visibleGenres.length}`}
           </button>
-        ))}
+        </div>
+        <div role="group" className="flex flex-wrap items-center gap-1.5" aria-label="Популярные исполнители">
+          <span className="mr-0.5 text-xs font-semibold text-muted">Исполнители:</span>
+          {QUICK_OFFLINE_SEARCHES.artist.map((suggestion) => (
+            <button
+              key={suggestion.query}
+              type="button"
+              aria-label={`Быстрый поиск: ${suggestion.label}`}
+              onClick={() => { setScope("artist"); setText(suggestion.query); submit(suggestion.query, "artist"); }}
+              className="rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-accent/40 hover:text-accent"
+            >
+              {suggestion.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -474,10 +524,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
         <>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => {
-                setActive(null);
-                setAlbums([]);
-              }}
+              onClick={clearSearch}
               className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-muted transition hover:text-ink"
             >
               <ArrowLeft size={17} /> Коллекции
@@ -514,15 +561,17 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             ))}
             {!loading && !error && albums.length === 0 && (
               <div className="p-10 text-center text-sm text-muted">
-                {active.text && active.scope === "artist" ? (
+                {active.genre ? (
+                  <p>В жанре «{active.genre.label}» пока ничего не найдено. Выберите другой жанр или измените запрос выше.</p>
+                ) : active.text && active.scope === "artist" ? (
                   <>
-                    <p>Совпадений по исполнителю и названию не найдено. Проверьте написание или попробуйте вариант латиницей.</p>
+                    <p>Исполнителя не нашли. Проверьте написание или попробуйте поиск «Везде».</p>
                     <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>
-                      Искать по всем полям
+                      Искать везде
                     </button>
                   </>
                 ) : active.text ? (
-                  <p>Точных совпадений нет. Проверьте формулировку или выберите другой запрос в подсказках выше.</p>
+                  <p>Ничего не найдено по запросу «{active.text}». Попробуйте другой жанр или поменяйте слова.</p>
                 ) : (
                   "Ничего не найдено. Попробуйте другую коллекцию."
                 )}

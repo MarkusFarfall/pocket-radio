@@ -1,14 +1,20 @@
 /**
  * Монитор интернет-соединения.
- * navigator.onLine врёт: «есть Wi-Fi» не значит «есть интернет». Поэтому, когда что-то идёт не так
- * (запуск приложения, событие offline, зависший поток), мы проверяем реальную связь лёгким запросом.
- * После успешной проверки запрос повторяется только при потере связи или в ускоренном режиме восстановления.
+ * navigator.onLine и событие offline могут срабатывать при переключении VPN, хотя интернет уже есть.
+ * Сначала проверяем heartbeat приложения, а при его недоступности — несколько независимых адресов.
+ * Один недоступный домен поэтому не означает, что пропал весь интернет.
  */
 
 const PROBE_PATH = "/connectivity.txt";
 const PROBE_BODY = "pocket-radio-online";
-const TIMEOUT = 4000;
+const APP_TIMEOUT = 1200;
+const EXTERNAL_TIMEOUT = 3500;
 const MAX_PROBE_BYTES = 256;
+const EXTERNAL_PROBES = [
+  "https://connectivitycheck.gstatic.com/generate_204",
+  "https://cp.cloudflare.com/generate_204",
+  "https://connectivity-check.ubuntu.com/",
+];
 
 async function readProbeText(response: Response): Promise<string | null> {
   const declaredSize = Number(response.headers.get("content-length"));
@@ -42,8 +48,14 @@ async function readProbeText(response: Response): Promise<string | null> {
   }
 }
 
+function withCacheBuster(rawUrl: string): URL {
+  const url = new URL(rawUrl);
+  url.searchParams.set("pr_ping", String(Date.now()));
+  return url;
+}
+
 class Connectivity {
-  // До проверки heartbeat не выдаём браузерный флаг за подтверждённый доступ в интернет.
+  // До первой успешной проверки не выдаём браузерный флаг за подтверждённый доступ в интернет.
   private online = false;
   private fast = false;
   private listeners = new Set<() => void>();
@@ -51,7 +63,8 @@ class Connectivity {
 
   constructor() {
     if (typeof window === "undefined") return;
-    window.addEventListener("offline", () => this.set(false));
+    // VPN может кратко вызвать offline даже при работающем обычном подключении — перепроверяем, не сбрасываем статус сразу.
+    window.addEventListener("offline", () => void this.probe());
     window.addEventListener("online", () => void this.probe());
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible" && !this.online) void this.probe();
@@ -82,10 +95,8 @@ class Connectivity {
     this.fast = v;
   }
 
-  /** Проверка настоящей связи. Возвращает true, если интернет доступен. */
+  /** Проверка реального доступа к сети; navigator.onLine намеренно не определяет результат. */
   probe(): Promise<boolean> {
-    // navigator.onLine может оставаться false после восстановления VPN или Wi-Fi;
-    // проверяем реальные endpoint-ы и не используем этот флаг как окончательный ответ.
     if (this.inflight) return this.inflight;
     this.inflight = this.run().finally(() => {
       this.inflight = null;
@@ -93,30 +104,82 @@ class Connectivity {
     return this.inflight;
   }
 
-  private async run(): Promise<boolean> {
+  private async probeAppOrigin(): Promise<boolean> {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), TIMEOUT);
+    const timer = setTimeout(() => ctl.abort(), APP_TIMEOUT);
     try {
-      const url = new URL(PROBE_PATH, location.origin);
-      url.searchParams.set("t", String(Date.now()));
-      const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
+      const url = withCacheBuster(new URL(PROBE_PATH, location.origin).href);
+      const res = await fetch(url, { cache: "no-store", credentials: "same-origin", signal: ctl.signal });
       const finalUrl = new URL(res.url || url.href, url.href);
       if (!res.ok || finalUrl.origin !== location.origin) {
         void res.body?.cancel().catch(() => undefined);
-        this.set(false);
         return false;
       }
       const body = await readProbeText(res);
-      const ok = body !== null && body.trim() === PROBE_BODY;
-      this.set(ok);
-      return ok;
+      return body !== null && body.trim() === PROBE_BODY;
     } catch {
-      this.set(false);
       return false;
     } finally {
       clearTimeout(timer);
       ctl.abort();
     }
+  }
+
+  /**
+   * The public checks intentionally use no-cors: their 204 responses do not expose CORS headers,
+   * but a resolved opaque response still confirms that DNS/TLS/network access reached that host.
+   */
+  private async probeExternal(rawUrl: string, signal: AbortSignal): Promise<boolean> {
+    try {
+      const url = withCacheBuster(rawUrl);
+      const res = await fetch(url, {
+        mode: "no-cors",
+        credentials: "omit",
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+        signal,
+      });
+      return !res.redirected && (res.type === "opaque" || (res.ok && res.status === 204));
+    } catch {
+      return false;
+    }
+  }
+
+  private async probeExternalHosts(): Promise<boolean> {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), EXTERNAL_TIMEOUT);
+    const probes = EXTERNAL_PROBES.map((url) => this.probeExternal(url, ctl.signal));
+    try {
+      return await new Promise<boolean>((resolve) => {
+        let pending = probes.length;
+        let settled = false;
+        const finish = (ok: boolean) => {
+          if (settled) return;
+          if (ok) {
+            settled = true;
+            resolve(true);
+            return;
+          }
+          pending -= 1;
+          if (pending === 0) {
+            settled = true;
+            resolve(false);
+          }
+        };
+        probes.forEach((probe) => void probe.then(finish, () => finish(false)));
+      });
+    } finally {
+      clearTimeout(timer);
+      ctl.abort();
+    }
+  }
+
+  private async run(): Promise<boolean> {
+    // Сначала используем собственный небольшой endpoint. Если домен блокируется или возвращает страницу-заглушку,
+    // независимые проверки уточнят, работает ли интернет через другие адреса.
+    const online = (await this.probeAppOrigin()) || (await this.probeExternalHosts());
+    this.set(online);
+    return online;
   }
 }
 

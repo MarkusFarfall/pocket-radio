@@ -6,6 +6,7 @@ import type { FallbackInfo, Playlist, Session, Station } from "./types";
 import { ambient } from "./ambient";
 import { fixText } from "./text";
 import { cachedBlobUrl } from "./offline";
+import { connectivity } from "./connectivity";
 import { isLanUrl, mixedContentRisk, uid } from "./templates";
 import { artworkFor } from "./artwork";
 import { toast } from "./toast";
@@ -714,9 +715,11 @@ class Engine {
         ? "Браузер блокирует http-поток на https-странице. Используйте https-адрес"
         : "Формат не поддерживается или адрес недоступен";
     }
-    if (!navigator.onLine && this.state.station && this.state.station.kind !== "lan") msg = "Нет интернета. Откройте скачанный плейлист";
+    // navigator.onLine can briefly flip to false while Android reroutes traffic after VPN changes.
+    // The global connectivity monitor decides whether the whole network is down; a stream error alone
+    // should stay station-specific and still get the usual reconnect attempts.
     this.logEvent("error", msg);
-    if (this.state.isLive && this.retries < 3 && navigator.onLine) {
+    if (this.state.isLive && this.retries < 3) {
       this.retries++;
       this.set({ status: "loading" });
       const st = this.state.station!;
@@ -857,7 +860,7 @@ class Engine {
     if (this.metaTimer) return;
     const run = async () => {
       const st = this.state.station;
-      if (!st || !this.state.isLive || this.state.dataSaver || !navigator.onLine || st.kind === "hls") return;
+      if (!st || !this.state.isLive || this.state.dataSaver || !connectivity.isOnline() || st.kind === "hls") return;
       const meta = await fetchMeta(st);
       if (this.state.station?.id === st.id && meta) {
         const cur = this.state.meta;

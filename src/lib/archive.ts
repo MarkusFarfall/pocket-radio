@@ -53,6 +53,33 @@ export const COLLECTION_GROUPS = [
   { id: "family", title: "Семья и праздники", desc: "Детские, зимние и военные песни" },
 ] as const;
 
+/** Популярные жанры: русские и английские названия ведут к жанровым темам Archive. */
+export interface ArchiveGenre {
+  id: string;
+  label: string;
+  aliases: string[];
+  query: string;
+}
+
+export const ARCHIVE_GENRES: ArchiveGenre[] = [
+  { id: "rock", label: "Рок", aliases: ["рок", "rock", "rock music", "рок-музыка"], query: '(subject:rock OR subject:"rock music" OR subject:rockabilly OR subject:"rock and roll")' },
+  { id: "pop", label: "Поп", aliases: ["поп", "поп-музыка", "поп музыка", "pop", "pop music"], query: '(subject:pop OR subject:"pop music" OR subject:electropop)' },
+  { id: "jazz", label: "Джаз", aliases: ["джаз", "jazz"], query: "(subject:jazz OR subject:swing OR subject:bebop)" },
+  { id: "classical", label: "Классика", aliases: ["классика", "классическая музыка", "classical", "classical music"], query: '(subject:classical OR subject:"classical music" OR subject:symphony OR subject:opera)' },
+  { id: "hip-hop", label: "Хип-хоп", aliases: ["хип-хоп", "хип хоп", "рэп", "hip hop", "hip-hop", "rap"], query: '(subject:"hip hop" OR subject:hip-hop OR subject:rap OR subject:hiphop)' },
+  { id: "electronic", label: "Электроника", aliases: ["электроника", "электронная музыка", "электронная", "electronic", "electronic music"], query: '(subject:electronic OR subject:"electronic music" OR subject:techno OR subject:house OR subject:trance OR subject:edm)' },
+  { id: "blues", label: "Блюз", aliases: ["блюз", "blues"], query: "subject:blues" },
+  { id: "metal", label: "Метал", aliases: ["метал", "металл", "тяжёлый металл", "тяжелый металл", "metal", "heavy metal"], query: '(subject:metal OR subject:"heavy metal" OR subject:metalcore)' },
+  { id: "country", label: "Кантри", aliases: ["кантри", "country", "country music"], query: '(subject:country OR subject:"country music" OR subject:bluegrass)' },
+  { id: "folk", label: "Фолк", aliases: ["фолк", "народная музыка", "folk", "folk music", "folklore"], query: '(subject:folk OR subject:"folk music" OR subject:folklore OR subject:"traditional music")' },
+  { id: "ambient", label: "Эмбиент", aliases: ["эмбиент", "эмбиентная музыка", "ambient", "ambient music"], query: '(subject:ambient OR subject:"ambient music" OR subject:soundscape OR subject:drone OR subject:"new age")' },
+  { id: "reggae", label: "Регги", aliases: ["регги", "reggae"], query: "(subject:reggae OR subject:ska OR subject:dub)" },
+  { id: "disco", label: "Диско", aliases: ["диско", "disco"], query: "(subject:disco OR subject:funk)" },
+  { id: "chanson", label: "Шансон", aliases: ["шансон", "русский шансон", "chanson", "russian chanson"], query: '(subject:шансон OR subject:chanson OR subject:"russian chanson")' },
+  { id: "soundtrack", label: "Саундтреки", aliases: ["саундтрек", "саундтреки", "музыка из кино", "soundtrack", "film music", "movie soundtrack"], query: '(subject:soundtrack OR subject:"film music" OR subject:"movie soundtrack")' },
+  { id: "latin", label: "Латино", aliases: ["латина", "латино", "латиноамериканская музыка", "latin", "latin music", "salsa", "самба"], query: '(subject:"latin music" OR subject:salsa OR subject:samba OR subject:tango)' },
+];
+
 /** Готовые подборки: каждая — поисковый запрос к архиву. */
 export const COLLECTIONS: Collection[] = [
   { id: "chanson", group: "russian", title: "Хиты шансона", desc: "Русский шансон и авторская песня", query: '(subject:шансон OR title:шансон OR title:"хиты шансона" OR subject:"русский шансон")', hue: 18, glyph: "mic" },
@@ -104,6 +131,13 @@ function normalizeSearchText(value: string): string {
     .trim();
 }
 
+/** Exact genre terms are translated to the Archive's commonly indexed English subjects. */
+export function findArchiveGenre(text: string): ArchiveGenre | undefined {
+  const normalized = normalizeSearchText(text);
+  if (!normalized) return undefined;
+  return ARCHIVE_GENRES.find((genre) => genre.aliases.some((alias) => normalizeSearchText(alias) === normalized));
+}
+
 const CYRILLIC_TO_LATIN: Record<string, string> = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh", з: "z",
   и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
@@ -130,7 +164,6 @@ function searchVariants(text: string): string[] {
     const latin = transliterateCyrillicToLatin(phrase);
     candidates.push(latin, latin.replace(/yo/gi, "e"));
   }
-
   const seen = new Set<string>();
   return candidates.filter((candidate) => {
     const normalized = normalizeSearchText(candidate);
