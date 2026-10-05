@@ -160,6 +160,8 @@ function searchVariants(text: string): string[] {
   if (!phrase || !normalizeSearchText(phrase)) return [];
 
   const candidates = [phrase];
+  const genre = findArchiveGenre(phrase);
+  if (genre) candidates.push(...genre.aliases);
   if (/\p{Script=Cyrillic}/u.test(phrase)) {
     const latin = transliterateCyrillicToLatin(phrase);
     candidates.push(latin, latin.replace(/yo/gi, "e"));
