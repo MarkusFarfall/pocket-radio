@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Disc3, Download, FileAudio, ListMusic, ListPlus, Loader2, Pause, Play, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
 import type { PlaylistItem } from "../../lib/types";
-import { COLLECTIONS, COLLECTION_GROUPS, albumTracks, inspectAlbum, searchAlbums, textQuery, type Album } from "../../lib/archive";
+import { COLLECTIONS, COLLECTION_GROUPS, albumTracks, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope } from "../../lib/archive";
 import { GLYPHS } from "../../lib/glyphs";
 import { createPlaylist, downloadItems, itemStationId, itemToStation } from "../../lib/playlists";
 import { gotoPlaylist, openPicker } from "../../lib/picker";
@@ -265,10 +265,13 @@ function AlbumPanel({ album, onClose }: { album: Album; onClose: () => void }) {
 interface Active {
   title: string;
   query: string;
+  text?: string;
+  scope?: AlbumSearchScope;
 }
 
 export function Collections({ online }: { online: boolean }) {
   const [text, setText] = useState("");
+  const [scope, setScope] = useState<AlbumSearchScope>("artist");
   const [active, setActive] = useState<Active | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [page, setPage] = useState(1);
@@ -285,10 +288,12 @@ export function Collections({ online }: { online: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const r = await searchAlbums(a.query, pg, c.signal);
+      const r = a.text !== undefined && a.scope
+        ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
+        : await searchAlbums(a.query, pg, c.signal);
       if (c.signal.aborted) return;
-      setAlbums((prev) => (pg === 1 ? r : [...prev, ...r.filter((x) => !prev.some((p) => p.id === x.id))]));
-      setMore(r.length >= 28);
+      setAlbums((prev) => (pg === 1 ? r.albums : [...prev, ...r.albums.filter((x) => !prev.some((p) => p.id === x.id))]));
+      setMore(r.hasMore);
       setPage(pg);
     } catch (e) {
       if (!c.signal.aborted) setError(e instanceof Error ? e.message : "Не удалось загрузить");
@@ -305,8 +310,16 @@ export function Collections({ online }: { online: boolean }) {
   }, [active, online, load]);
 
   const submit = () => {
-    const q = textQuery(text);
-    if (q) setActive({ title: `«${text.trim()}»`, query: q });
+    const value = text.trim();
+    const query = textQuery(value, scope);
+    if (query) setActive({ title: `«${value}»`, query, text: value, scope });
+  };
+
+  const broadenSearch = () => {
+    if (!active?.text) return;
+    const query = textQuery(active.text, "all");
+    setScope("all");
+    setActive({ ...active, query, scope: "all" });
   };
 
   if (!online)
@@ -319,19 +332,51 @@ export function Collections({ online }: { online: boolean }) {
     );
 
   const search = (
-    <div className="flex gap-2">
-      <div className="relative min-w-0 flex-1">
-        <SearchIcon size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-        <input data-search className={cn(inputCls, "pl-10 pr-9")} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Исполнитель, жанр или название сборника" />
-        {text && (
-          <button onClick={() => setText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
-            <X size={16} />
-          </button>
-        )}
+    <div className="space-y-2.5">
+      <div role="group" aria-label="Тип поиска" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1">
+        <button
+          type="button"
+          aria-pressed={scope === "artist"}
+          onClick={() => setScope("artist")}
+          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "artist" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
+        >
+          По исполнителю
+        </button>
+        <button
+          type="button"
+          aria-pressed={scope === "all"}
+          onClick={() => setScope("all")}
+          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "all" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
+        >
+          По названию / жанру
+        </button>
       </div>
-      <button className={btnPrimary} disabled={!textQuery(text)} onClick={submit}>
-        Найти
-      </button>
+      <div className="flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            data-search
+            className={cn(inputCls, "pl-10 pr-9")}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder={scope === "artist" ? "Например: a-ha, Talk Talk" : "Название альбома, песни или жанр"}
+          />
+          {text && (
+            <button onClick={() => setText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted hover:text-ink" aria-label="Очистить">
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        <button className={btnPrimary} disabled={!textQuery(text, scope)} onClick={submit}>
+          Найти
+        </button>
+      </div>
+      <p className="text-xs leading-relaxed text-muted">
+        {scope === "artist"
+          ? "Точное совпадение по исполнителю; шумные импортные подборки отсекаются."
+          : "Ищем точную фразу в исполнителе, названии и темах."}
+      </p>
     </div>
   );
 
@@ -415,7 +460,20 @@ export function Collections({ online }: { online: boolean }) {
             {albums.map((a) => (
               <AlbumRow key={a.id} album={a} onOpen={() => setOpen(a)} />
             ))}
-            {!loading && !error && albums.length === 0 && <div className="p-10 text-center text-sm text-muted">Ничего не найдено. Попробуйте другой запрос или другую коллекцию.</div>}
+            {!loading && !error && albums.length === 0 && (
+              <div className="p-10 text-center text-sm text-muted">
+                {active.text && active.scope === "artist" ? (
+                  <>
+                    <p>Точного совпадения по исполнителю не найдено.</p>
+                    <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>
+                      Искать по названию и жанру
+                    </button>
+                  </>
+                ) : (
+                  "Ничего не найдено. Попробуйте другой запрос или другую коллекцию."
+                )}
+              </div>
+            )}
           </div>
 
           {more && albums.length > 0 && (

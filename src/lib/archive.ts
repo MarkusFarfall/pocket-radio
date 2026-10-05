@@ -21,6 +21,17 @@ export interface Album {
   cover?: string;
 }
 
+export type AlbumSearchScope = "artist" | "all";
+
+export interface AlbumSearchPage {
+  albums: Album[];
+  hasMore: boolean;
+}
+
+const SEARCH_PAGE_SIZE = 30;
+const SEARCH_BATCH_SIZE = 50;
+const MAX_SEARCH_BATCHES = 12;
+
 export interface Collection {
   id: string;
   title: string;
@@ -71,41 +82,135 @@ export const COLLECTIONS: Collection[] = [
   { id: "war", group: "family", title: "Песни военных лет", desc: "Фронтовые и послевоенные песни", query: '(title:"песни военных лет" OR subject:"военные песни" OR subject:"world war ii songs")', hue: 80, glyph: "landmark" },
 ];
 
-/** Превращает обычный текст пользователя в безопасный поисковый запрос. */
-export function textQuery(text: string): string {
-  const t = text.replace(/["():\[\]{}\\^~*?!+\-]/g, " ").replace(/\s+/g, " ").trim();
-  return t ? `(title:(${t}) OR subject:(${t}) OR creator:(${t}))` : "";
+/** Строит фразовый запрос: свободный текст больше не превращается в OR из отдельных слов. */
+export function textQuery(text: string, scope: AlbumSearchScope = "artist"): string {
+  const phrase = text
+    .replace(/[\u0000-\u001f]/g, " ")
+    .replace(/["\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!phrase) return "";
+  const quoted = `"${phrase}"`;
+  return scope === "artist" ? `creator:${quoted}` : `(creator:${quoted} OR title:${quoted} OR subject:${quoted})`;
 }
 
 interface Doc {
   identifier: string;
   title?: string | string[];
   creator?: string | string[];
+  subject?: string | string[];
+  collection?: string | string[];
   year?: string | number;
   downloads?: number;
 }
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? ""));
 
-export async function searchAlbums(query: string, page: number, signal?: AbortSignal): Promise<Album[]> {
-  const p = new URLSearchParams();
-  p.set("q", `(${query}) AND mediatype:audio`);
-  for (const f of ["identifier", "title", "creator", "year", "downloads"]) p.append("fl[]", f);
-  p.append("sort[]", "downloads desc");
-  p.set("rows", "30");
-  p.set("page", String(page));
-  p.set("output", "json");
-  const r = await fetch(`${BASE}/advancedsearch.php?${p}`, { signal });
-  if (!r.ok) throw new Error(`Архив ответил ${r.status}`);
-  const j = (await r.json()) as { response?: { docs?: Doc[] } };
-  return (j.response?.docs ?? []).map((d) => ({
+function toAlbum(d: Doc): Album {
+  return {
     id: d.identifier,
     title: fixText(one(d.title)) || d.identifier,
     creator: fixText(one(d.creator)),
     year: d.year ? String(d.year) : "",
-    downloads: d.downloads ?? 0,
+    downloads: Number(d.downloads) || 0,
     thumb: `${BASE}/services/img/${encodeURIComponent(d.identifier)}`,
-  }));
+  };
+}
+
+async function requestAlbumDocs(query: string, page: number, rows: number, signal?: AbortSignal): Promise<{ docs: Doc[]; total: number }> {
+  const p = new URLSearchParams();
+  p.set("q", `(${query}) AND mediatype:audio`);
+  for (const f of ["identifier", "title", "creator", "subject", "collection", "year", "downloads"]) p.append("fl[]", f);
+  p.append("sort[]", "downloads desc");
+  p.set("rows", String(rows));
+  p.set("page", String(page));
+  p.set("output", "json");
+  const r = await fetch(`${BASE}/advancedsearch.php?${p}`, { signal });
+  if (!r.ok) throw new Error(`Архив ответил ${r.status}`);
+  const j = (await r.json()) as { response?: { docs?: Doc[]; numFound?: number } };
+  const docs = j.response?.docs ?? [];
+  return { docs, total: Number(j.response?.numFound) || docs.length };
+}
+
+export async function searchAlbums(query: string, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
+  const { docs, total } = await requestAlbumDocs(query, page, SEARCH_PAGE_SIZE, signal);
+  return { albums: docs.map(toAlbum), hasMore: page * SEARCH_PAGE_SIZE < total };
+}
+
+function normalizeSearchText(value: string): string {
+  return fixText(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function hasPhrase(value: string, phrase: string): boolean {
+  const field = normalizeSearchText(value);
+  return !!field && (` ${field} `).includes(` ${phrase} `);
+}
+
+function artistCreatorMatch(value: string, phrase: string): boolean {
+  const chunks = value.split(/[;,|/]+/).map(normalizeSearchText).filter(Boolean);
+  if (chunks.length > 3) return false;
+  return chunks.some((chunk) => chunk === phrase || chunk.startsWith(`${phrase} `) || chunk === `the ${phrase}` || chunk.startsWith(`the ${phrase} `));
+}
+
+function matchesTextSearch(doc: Doc, phrase: string, scope: AlbumSearchScope): boolean {
+  const creator = one(doc.creator);
+  if (scope === "artist") {
+    const collections = one(doc.collection).toLowerCase().split(/[;,\s]+/);
+    // IA's imported Jamendo collection currently has many unrelated items misattributed to known artists.
+    if (collections.includes("jamendo-albums")) return false;
+    return artistCreatorMatch(creator, phrase);
+  }
+  return [one(doc.title), creator, one(doc.subject)].some((field) => hasPhrase(field, phrase));
+}
+
+function textRelevance(doc: Doc, phrase: string): number {
+  const creator = one(doc.creator);
+  const collections = one(doc.collection).toLowerCase().split(/[;,\s]+/);
+  if (!collections.includes("jamendo-albums") && artistCreatorMatch(creator, phrase)) return 3;
+  if (hasPhrase(one(doc.title), phrase)) return 2;
+  if (hasPhrase(creator, phrase)) return 1.5;
+  return 1;
+}
+
+/** Точный поиск пользовательской фразы с клиентской проверкой шумных метаданных IA. */
+export async function searchTextAlbums(text: string, scope: AlbumSearchScope, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
+  const query = textQuery(text, scope);
+  const phrase = normalizeSearchText(text);
+  if (!query || !phrase) return { albums: [], hasMore: false };
+
+  const matched: Doc[] = [];
+  const seen = new Set<string>();
+  let rawPage = 1;
+  let total = 0;
+  let exhausted = false;
+  const needed = page * SEARCH_PAGE_SIZE + 1;
+
+  while (matched.length < needed && rawPage <= MAX_SEARCH_BATCHES) {
+    const result = await requestAlbumDocs(query, rawPage, SEARCH_BATCH_SIZE, signal);
+    total = result.total;
+    for (const doc of result.docs) {
+      if (seen.has(doc.identifier) || !matchesTextSearch(doc, phrase, scope)) continue;
+      seen.add(doc.identifier);
+      matched.push(doc);
+    }
+    if (result.docs.length < SEARCH_BATCH_SIZE || rawPage * SEARCH_BATCH_SIZE >= total) {
+      exhausted = true;
+      break;
+    }
+    rawPage += 1;
+  }
+
+  if (scope === "all") matched.sort((a, b) => textRelevance(b, phrase) - textRelevance(a, phrase) || (Number(b.downloads) || 0) - (Number(a.downloads) || 0));
+  const start = (page - 1) * SEARCH_PAGE_SIZE;
+  return {
+    albums: matched.slice(start, start + SEARCH_PAGE_SIZE).map(toAlbum),
+    hasMore: matched.length > start + SEARCH_PAGE_SIZE || !exhausted || rawPage * SEARCH_BATCH_SIZE < total,
+  };
 }
 
 interface FileRow {
