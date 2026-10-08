@@ -39,7 +39,10 @@ async function archiveDocs(page: Page, docs: ArchiveDoc[] | ((query: string) => 
 
 test("offline music search keeps the familiar layout and finds Russian genre names", async ({ page }) => {
   const queries = await archiveDocs(page, (query) => {
-    if (query.includes("subject:rock")) return [{ identifier: "rock-night", title: "Rock Night", creator: "The Rockers", subject: "rock", downloads: 210, collection: ["opensource_audio"] }];
+    if (query.includes("subject:rock")) return [
+      { identifier: "rock-night", title: "Rock Night", creator: "The Rockers", subject: "rock", downloads: 210, collection: ["opensource_audio"] },
+      { identifier: "rock-audiobook", title: "Rock History — Unabridged Audiobook", creator: "The Rockers", subject: "rock", downloads: 9900, collection: ["audio_books"] },
+    ];
     if (query.includes("subject:jazz")) return [{ identifier: "jazz-night", title: "Jazz Night", creator: "Jazz Ensemble", subject: "jazz", downloads: 250, collection: ["opensource_audio"] }];
     if (query.includes("subject:folk")) return [{ identifier: "folk-evening", title: "Folk Evening", creator: "The Folk Band", subject: "folk music", downloads: 70, collection: ["opensource_audio"] }];
     return [];
@@ -60,6 +63,7 @@ test("offline music search keeps the familiar layout and finds Russian genre nam
   await page.getByRole("button", { name: "Найти", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Жанр: Рок" })).toBeVisible();
   await expect(page.getByText("Rock Night", { exact: true })).toBeVisible();
+  await expect(page.getByText("Rock History — Unabridged Audiobook", { exact: true })).toHaveCount(0);
   await expect(searchInput).toHaveValue("рок");
   expect(queries.some((query) => query.includes("subject:rock"))).toBe(true);
 
@@ -96,6 +100,8 @@ test("artist search keeps A-ha results precise and drops noisy Archive metadata"
     { identifier: "aha-jamendo-noise", title: "a-ha - Gorgon City All Four Walls", creator: "a-ha", year: 2025, downloads: 900, collection: ["jamendo-albums"] },
     { identifier: "aha-cover", title: "Take On Me", creator: "Written by A-Ha, covered by Asteroid M", downloads: 80, collection: ["opensource_audio"] },
     { identifier: "aha-giant-mix", title: "ForSaken Borders Townsfolk Music", creator: "A-ha, Coldplay, Don McLean, Imagine Dragons, Jason Mraz", downloads: 40, collection: ["opensource_audio"] },
+    { identifier: "aha-audiobook", title: "A-Ha — Complete Biography (Unabridged Audiobook)", creator: "A-Ha", subject: "audiobook", downloads: 9900, collection: ["audio_books"] },
+    { identifier: "aha-interview", title: "Interview with A-Ha", creator: "A-Ha", subject: "interview", downloads: 8000, collection: ["opensource_audio"] },
     { identifier: "false-artist", title: "A Ha Llegado", creator: "Someone Else", downloads: 1, collection: ["opensource_audio"] },
   ]);
 
@@ -110,6 +116,8 @@ test("artist search keeps A-ha results precise and drops noisy Archive metadata"
   await expect(page.getByText("a-ha - Gorgon City All Four Walls", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Written by A-Ha, covered by Asteroid M", { exact: true })).toHaveCount(0);
   await expect(page.getByText("ForSaken Borders Townsfolk Music", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("A-Ha — Complete Biography (Unabridged Audiobook)", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Interview with A-Ha", { exact: true })).toHaveCount(0);
   await expect(page.getByText("A Ha Llegado", { exact: true })).toHaveCount(0);
   expect(queries[0]).toContain('creator:"a-ha"');
   expect(queries[0]).not.toContain(" OR title:(a ha)");
@@ -121,6 +129,7 @@ test("all-fields search uses an exact phrase rather than matching isolated words
     { identifier: "talk-talk-by-title", title: "Talk Talk", creator: "Various artists", downloads: 20, collection: ["opensource_audio"] },
     { identifier: "talk-only", title: "Talk to Me", creator: "Another Artist", downloads: 999, collection: ["opensource_audio"] },
     { identifier: "talking-heads", title: "Talking Heads", creator: "Talking Heads", downloads: 500, collection: ["opensource_audio"] },
+    { identifier: "talk-talk-interview", title: "Talk Talk — Interview", creator: "Talk Talk", subject: "spoken word", downloads: 5000, collection: ["opensource_audio"] },
   ]);
 
   await openCollections(page);
@@ -134,6 +143,7 @@ test("all-fields search uses an exact phrase rather than matching isolated words
   await expect(page.getByRole("button", { name: /Talk Talk Various artists/ })).toBeVisible();
   await expect(page.getByText("Talk to Me", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Talking Heads", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Talk Talk — Interview", { exact: true })).toHaveCount(0);
   expect(queries[0]).toContain('title:"Talk Talk"');
   expect(queries[0]).toContain('creator:"Talk Talk"');
 });

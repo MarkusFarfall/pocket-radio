@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ListPlus, Loader2, Plus } from "lucide-react";
 import type { Station } from "../lib/types";
 import { closePicker, gotoPlaylist, openPicker, usePicker } from "../lib/picker";
-import { addItems, createPlaylist, stationToItem, usePlaylists } from "../lib/playlists";
+import { addItems, createPlaylist, downloadItems, stationToItem, usePlaylists } from "../lib/playlists";
 import { toast } from "../lib/toast";
 import { Modal, btnGhost, btnPrimary, inputCls } from "./ui";
 import { PlaylistArtwork } from "./PlaylistArtwork";
@@ -34,8 +34,10 @@ export function PlaylistPicker() {
     setBusy(true);
     try {
       const added = await addItems(id, req.items);
+      const downloadAfterAdd = req.downloadAfterAdd;
       closePicker();
       toast(added ? `Добавлено: ${added} → «${title}»` : `Эти треки уже есть в «${title}»`, added ? "ok" : "info", { label: "Открыть", run: () => gotoPlaylist(id) });
+      if (downloadAfterAdd) void downloadItems(id, req.items, title);
     } finally {
       setBusy(false);
     }
@@ -44,9 +46,11 @@ export function PlaylistPicker() {
   const create = async () => {
     setBusy(true);
     try {
+      const downloadAfterAdd = req.downloadAfterAdd;
       const p = await createPlaylist(name || req.suggest || "Новый плейлист", req.items, { follow: req.follow, cover: req.cover });
       closePicker();
       toast(`Плейлист «${p.name}» создан`, "ok", { label: "Открыть", run: () => gotoPlaylist(p.id) });
+      if (downloadAfterAdd) void downloadItems(p.id, req.items, p.name);
     } finally {
       setBusy(false);
     }
@@ -56,6 +60,7 @@ export function PlaylistPicker() {
     <Modal open onClose={closePicker} size="sm" title="В плейлист">
       <div className="p-5">
         <p className="truncate text-sm text-muted">{summary}</p>
+        {req.downloadAfterAdd && <p className="mt-1 text-xs leading-relaxed text-muted">После добавления сразу начнётся скачивание для офлайн-прослушивания.</p>}
 
         {lists.length > 0 && (
           <ul className="mt-3 max-h-64 space-y-1 overflow-y-auto">

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, Disc3, Download, FileAudio, ListMusic, ListPlus, Loader2, Pause, Play, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
+import { ArrowLeft, Check, Disc3, Download, ExternalLink, FileAudio, ListMusic, ListPlus, Loader2, Pause, Play, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
 import type { PlaylistItem } from "../../lib/types";
 import type { ViewProps } from "../shared";
 import { ARCHIVE_GENRES, COLLECTIONS, COLLECTION_GROUPS, albumTracks, findArchiveGenre, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope, type ArchiveGenre } from "../../lib/archive";
+import { searchOpenverseTracks } from "../../lib/openverse";
+import { searchCommonsTracks } from "../../lib/commons";
+import { genreSearchTerm, type DiscoveredMusicTrack, type DiscoveredMusicProvider } from "../../lib/discoveredMusic";
 import { GLYPHS } from "../../lib/glyphs";
 import { createPlaylist, downloadItems, itemStationId, itemToStation } from "../../lib/playlists";
 import { gotoPlaylist, openPicker } from "../../lib/picker";
@@ -92,6 +95,47 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
     </button>
   );
 }
+
+function DiscoveredTrackRow({
+  track,
+  onPlay,
+  onAdd,
+}: {
+  track: DiscoveredMusicTrack;
+  onPlay: () => void;
+  onAdd: (download: boolean) => void;
+}) {
+  return (
+    <article data-provider-track={track.id} className="flex items-center gap-2 rounded-xl p-2 transition hover:bg-surface-2 sm:gap-3">
+      <Cover s={{ name: track.title, logo: track.logo, kind: "vod", genre: "Музыка", icon: "g:music" }} size={46} className="shrink-0 rounded-lg" eager fit="cover" />
+      <div className="min-w-0 flex-1">
+        <div className="line-clamp-2 text-sm font-semibold leading-snug">{track.title}</div>
+        <div className="mt-0.5 truncate text-xs text-muted">{track.creator || "Автор не указан"} · {track.providerName}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
+          <a className="font-semibold text-accent hover:underline" href={track.licenseUrl || track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Лицензия ${track.licenseName}: ${track.title}`}>
+            {track.licenseName}
+          </a>
+          {track.duration ? <span>{fmtClock(track.duration)}</span> : null}
+          <a className="inline-flex items-center gap-0.5 hover:text-accent" href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Оригинал: ${track.title}`}>
+            Оригинал <ExternalLink size={10} />
+          </a>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button type="button" onClick={onPlay} className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-ink transition hover:brightness-95" aria-label={`Слушать «${track.title}»`} title="Слушать">
+          <Play size={15} className="ml-0.5 fill-current" />
+        </button>
+        <button type="button" onClick={() => onAdd(false)} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface hover:text-ink" aria-label={`В плейлист: ${track.title}`} title="Добавить в плейлист">
+          <ListPlus size={17} />
+        </button>
+        <button type="button" onClick={() => onAdd(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface hover:text-accent" aria-label={`Скачать офлайн: ${track.title}`} title="Добавить и скачать офлайн">
+          <Download size={16} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
 
 function CollectionCard({ c, onClick }: { c: (typeof COLLECTIONS)[number]; onClick: () => void }) {
   const G = GLYPHS[c.glyph]?.icon ?? GLYPHS.music.icon;
@@ -285,19 +329,24 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
 
 /* ----------------------------------------------- раздел ----------------------------------------------- */
 
+type MusicSource = "archive" | DiscoveredMusicProvider;
+
 interface Active {
   title: string;
   query: string;
   text?: string;
   scope?: AlbumSearchScope;
   genre?: ArchiveGenre;
+  provider?: MusicSource;
 }
 
 export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewProps["onPlay"] }) {
   const [text, setText] = useState("");
   const [scope, setScope] = useState<AlbumSearchScope>("artist");
+  const [provider, setProvider] = useState<MusicSource>("archive");
   const [active, setActive] = useState<Active | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [externalTracks, setExternalTracks] = useState<DiscoveredMusicTrack[]>([]);
   const [page, setPage] = useState(1);
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -312,14 +361,25 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
     setLoading(true);
     setError(null);
     try {
-      const r = a.genre
-        ? await searchAlbums(a.genre.query, pg, c.signal)
-        : a.text !== undefined && a.scope
-          ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
-          : await searchAlbums(a.query, pg, c.signal);
-      if (c.signal.aborted) return;
-      setAlbums((prev) => (pg === 1 ? r.albums : [...prev, ...r.albums.filter((x) => !prev.some((p) => p.id === x.id))]));
-      setMore(r.hasMore);
+      const selectedProvider = a.provider ?? "archive";
+      if (selectedProvider !== "archive") {
+        const options = { text: a.text ?? a.query, scope: a.scope ?? "artist", genre: a.genre, page: pg, signal: c.signal };
+        const result = selectedProvider === "openverse" ? await searchOpenverseTracks(options) : await searchCommonsTracks(options);
+        if (c.signal.aborted) return;
+        setExternalTracks((prev) => pg === 1 ? result.tracks : [...prev, ...result.tracks.filter((track) => !prev.some((item) => item.id === track.id))]);
+        setAlbums([]);
+        setMore(result.hasMore);
+      } else {
+        const result = a.genre
+          ? await searchAlbums(a.genre.query, pg, c.signal)
+          : a.text !== undefined && a.scope
+            ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
+            : await searchAlbums(a.query, pg, c.signal);
+        if (c.signal.aborted) return;
+        setAlbums((prev) => (pg === 1 ? result.albums : [...prev, ...result.albums.filter((album) => !prev.some((item) => item.id === album.id))]));
+        setExternalTracks([]);
+        setMore(result.hasMore);
+      }
       setPage(pg);
     } catch (e) {
       if (!c.signal.aborted) setError(e instanceof Error ? e.message : "Не удалось загрузить");
@@ -331,6 +391,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
   useEffect(() => {
     if (!active || !online) return;
     setAlbums([]);
+    setExternalTracks([]);
     void load(active, 1);
     return () => ctl.current?.abort();
   }, [active, online, load]);
@@ -348,6 +409,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
         text: value,
         scope: searchScope,
         genre,
+        provider,
       });
     }
   };
@@ -365,13 +427,35 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
     if (active?.text) submit(text.trim() || active.text, nextScope, nextScope === "artist");
   };
 
+  const switchProvider = (nextProvider: MusicSource) => {
+    setProvider(nextProvider);
+    setActive(null);
+    setAlbums([]);
+    setExternalTracks([]);
+    setError(null);
+    setMore(false);
+  };
+
   const clearSearch = () => {
     setText("");
     setScope("artist");
     setActive(null);
     setAlbums([]);
+    setExternalTracks([]);
     setError(null);
     setMore(false);
+  };
+
+  const playDiscoveredTrack = (track: DiscoveredMusicTrack) => {
+    const stations = externalTracks.map((item) => itemToStation(item));
+    const current = stations.find((station) => station.id === itemStationId(track.id));
+    if (!current) return;
+    player.pin(stations);
+    onPlay(current, stations.map((station) => station.id), { kind: "collection", title: active?.title ?? track.providerName });
+  };
+
+  const addDiscoveredTrack = (track: DiscoveredMusicTrack, downloadAfterAdd: boolean) => {
+    openPicker({ items: [track], suggest: track.title.slice(0, 70) || track.providerName, cover: track.logo, downloadAfterAdd });
   };
 
   if (!online)
@@ -482,17 +566,34 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
   return (
     <div className="space-y-5">
       <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
-        <p className="text-sm leading-relaxed">
-          <b>Песни для прослушивания без интернета.</b> Найдите сборник в Internet Archive, послушайте и нажмите «Скачать для офлайна»: песни сохранятся на устройстве в плейлист и будут играть без сети.
-        </p>
+        <div className="flex items-start gap-3">
+          <p className="min-w-0 flex-1 text-sm leading-relaxed">
+            <b>{provider === "archive" ? "Песни и альбомы." : "Отдельные аудиотреки."}</b> {provider === "archive" ? "Ищите в коллекциях Internet Archive." : "Ищите по исполнителю, названию или жанру."} Офлайн-загрузка зависит от лицензии и доступа к файлу.
+          </p>
+          <select
+            aria-label="Источник музыки"
+            value={provider}
+            onChange={(event) => switchProvider(event.target.value as MusicSource)}
+            className={cn(inputCls, "!w-32 shrink-0 !py-2 !pl-2 !pr-5 text-[11px] font-semibold sm:!w-40 sm:text-xs")}
+          >
+            <option value="archive">Archive.org</option>
+            <option value="openverse">Openverse</option>
+            <option value="commons">Commons</option>
+          </select>
+        </div>
         {search}
         <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
           <ShieldAlert size={15} className="mt-0.5 shrink-0" />
-          Internet Archive — открытая библиотека, записи загружают пользователи. Права на музыку принадлежат правообладателям: сохраняйте то, что вам разрешено. Среди результатов могут попадаться записи 18+.
+          {provider === "archive"
+            ? "Internet Archive — открытая библиотека: права на записи остаются у правообладателей. Сохраняйте только то, что вам разрешено."
+            : provider === "openverse"
+              ? "Openverse агрегирует музыку из Jamendo, Wikimedia Commons и Freesound. Проверяйте лицензию, атрибуцию и страницу оригинала перед использованием или скачиванием."
+              : "Wikimedia Commons: условия лицензии и возможность скачивания различаются для каждого файла. Проверьте страницу оригинала."}
         </p>
       </div>
 
       {!active ? (
+        provider === "archive" ? (
         <>
           <div className="flex items-end justify-between gap-3 px-1">
             <div>
@@ -520,6 +621,31 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             );
           })}
         </>
+
+        ) : (
+          <section className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+            <div>
+              <h2 className="font-display text-xl font-semibold tracking-tight">Популярные жанры</h2>
+              <p className="mt-0.5 text-xs text-muted">Здесь — отдельные треки, не альбомы. Условия и возможность скачивания зависят от файла.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {ARCHIVE_GENRES.slice(0, 8).map((genre) => (
+                <button
+                  key={genre.id}
+                  type="button"
+                  onClick={() => {
+                    setScope("all");
+                    setText(genre.label);
+                    setActive({ title: `Жанр: ${genre.label}`, query: genreSearchTerm(genre), text: genre.label, scope: "all", genre, provider });
+                  }}
+                  className="rounded-xl border border-line bg-bg px-3 py-3 text-left text-sm font-semibold text-ink transition hover:border-accent/40 hover:bg-accent/5"
+                >
+                  {genre.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        )
       ) : (
         <>
           <div className="flex items-center gap-3">
@@ -532,12 +658,14 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             <h2 className="min-w-0 truncate font-display text-xl font-semibold tracking-tight">{active.title}</h2>
           </div>
           <p role="status" aria-live="polite" className="px-1 text-xs text-muted">
-            {loading ? "Ищем в Internet Archive…" : `Показано записей: ${albums.length}${more ? "+" : ""}`}
+            {loading
+              ? provider === "archive" ? "Ищем и отсекаем аудиокниги…" : "Ищем аудиотреки…"
+              : `Подходящих ${provider === "archive" ? "записей" : "треков"}: ${provider === "archive" ? albums.length : externalTracks.length}${more ? "+" : ""}`}
           </p>
 
           {error && (
             <div className="flex items-center gap-3 rounded-xl bg-bad/10 p-4 text-sm text-bad">
-              <span className="flex-1">Не удалось связаться с архивом: {error}</span>
+              <span className="flex-1">Не удалось связаться с {provider === "archive" ? "Internet Archive" : provider === "openverse" ? "Openverse" : "Wikimedia Commons"}: {error}</span>
               <button className="shrink-0 font-semibold underline" onClick={() => void load(active, 1)}>
                 Повторить
               </button>
@@ -545,41 +673,73 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
           )}
 
           <div className="rounded-2xl border border-line bg-surface p-1.5">
-            {loading &&
-              !albums.length &&
-              Array.from({ length: 6 }, (_, i) => (
-                <div key={i} className="flex animate-pulse items-center gap-3 p-2">
-                  <div className="h-[46px] w-[46px] rounded-lg bg-surface-2" />
-                  <div className="flex-1 space-y-2">
-                    <div className="h-3.5 w-2/3 rounded bg-surface-2" />
-                    <div className="h-3 w-1/3 rounded bg-surface-2" />
+            {provider === "archive" ? (
+              <>
+                {loading && !albums.length && Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="flex animate-pulse items-center gap-3 p-2">
+                    <div className="h-[46px] w-[46px] rounded-lg bg-surface-2" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 rounded bg-surface-2" />
+                      <div className="h-3 w-1/3 rounded bg-surface-2" />
+                    </div>
                   </div>
-                </div>
-              ))}
-            {albums.map((a) => (
-              <AlbumRow key={a.id} album={a} onOpen={() => setOpen(a)} />
-            ))}
-            {!loading && !error && albums.length === 0 && (
-              <div className="p-10 text-center text-sm text-muted">
-                {active.genre ? (
-                  <p>В жанре «{active.genre.label}» пока ничего не найдено. Выберите другой жанр или измените запрос выше.</p>
-                ) : active.text && active.scope === "artist" ? (
-                  <>
-                    <p>Исполнителя не нашли. Проверьте написание или попробуйте режим «По названию / жанру».</p>
-                    <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>
-                      Искать везде
-                    </button>
-                  </>
-                ) : active.text ? (
-                  <p>Ничего не найдено по запросу «{active.text}». Попробуйте другой жанр или поменяйте слова.</p>
-                ) : (
-                  "Ничего не найдено. Попробуйте другую коллекцию."
+                ))}
+                {albums.map((album) => <AlbumRow key={album.id} album={album} onOpen={() => setOpen(album)} />)}
+                {!loading && !error && albums.length === 0 && (
+                  <div className="p-10 text-center text-sm text-muted">
+                    {active.genre ? (
+                      <p>В жанре «{active.genre.label}» пока ничего не найдено. Выберите другой жанр или измените запрос выше.</p>
+                    ) : active.text && active.scope === "artist" ? (
+                      <>
+                        <p>Исполнителя не нашли. Проверьте написание или попробуйте режим «По названию / жанру».</p>
+                        <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>Искать везде</button>
+                      </>
+                    ) : active.text ? (
+                      <p>Ничего не найдено по запросу «{active.text}». Попробуйте другой жанр или поменяйте слова.</p>
+                    ) : (
+                      "Ничего не найдено. Попробуйте другую коллекцию."
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
+            ) : (
+              <>
+                {loading && !externalTracks.length && Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="flex animate-pulse items-center gap-3 p-2">
+                    <div className="h-[46px] w-[46px] rounded-lg bg-surface-2" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 rounded bg-surface-2" />
+                      <div className="h-3 w-1/3 rounded bg-surface-2" />
+                    </div>
+                  </div>
+                ))}
+                {externalTracks.map((track) => (
+                  <DiscoveredTrackRow
+                    key={track.id}
+                    track={track}
+                    onPlay={() => playDiscoveredTrack(track)}
+                    onAdd={(download) => addDiscoveredTrack(track, download)}
+                  />
+                ))}
+                {!loading && !error && externalTracks.length === 0 && (
+                  <div className="p-10 text-center text-sm text-muted">
+                    {active.genre ? (
+                      <p>По жанру «{active.genre.label}» не нашлось треков с указанной лицензией. Попробуйте другой жанр.</p>
+                    ) : active.text && active.scope === "artist" ? (
+                      <>
+                        <p>В открытом каталоге не нашёл точных совпадений по исполнителю. Можно попробовать поиск по всем полям.</p>
+                        <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>Искать везде</button>
+                      </>
+                    ) : (
+                      <p>Не нашлось треков по запросу «{active.text}». Попробуйте другие слова или переключите источник.</p>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          {more && albums.length > 0 && (
+          {more && (provider === "archive" ? albums.length > 0 : externalTracks.length > 0) && (
             <div className="text-center">
               <button className={btnGhost} disabled={loading} onClick={() => void load(active, page + 1)}>
                 {loading ? <Loader2 size={16} className="animate-spin" /> : null} Показать ещё

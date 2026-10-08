@@ -131,6 +131,14 @@ function normalizeSearchText(value: string): string {
     .trim();
 }
 
+const SPOKEN_WORD_MARKERS = [
+  "audiobook", "audiobooks", "audio book", "audio books", "librivox", "project gutenberg", "spoken word",
+  "unabridged", "abridged audiobook", "narrated", "narration", "read by", "read aloud", "book reading",
+  "book on tape", "book on cd", "radio drama", "audio drama", "podcast", "lecture", "sermon", "interview",
+  "аудиокнига", "аудиокниги", "аудиоспектакль", "радиоспектакль", "радиопостановка",
+  "читает", "читают", "чтение вслух", "лекция", "интервью",
+].map(normalizeSearchText);
+
 /** Exact genre terms are translated to the Archive's commonly indexed English subjects. */
 export function findArchiveGenre(text: string): ArchiveGenre | undefined {
   const normalized = normalizeSearchText(text);
@@ -229,8 +237,25 @@ async function requestAlbumDocs(query: string, page: number, rows: number, signa
 }
 
 export async function searchAlbums(query: string, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
-  const { docs, total } = await requestAlbumDocs(query, page, SEARCH_PAGE_SIZE, signal);
-  return { albums: docs.map((doc) => toAlbum(doc)), hasMore: page * SEARCH_PAGE_SIZE < total };
+  const start = (Math.max(1, page) - 1) * SEARCH_PAGE_SIZE;
+  const needed = start + SEARCH_PAGE_SIZE + 1;
+  const docs: Doc[] = [];
+  const seen = new Set<string>();
+
+  for (let rawPage = 1; rawPage <= MAX_SEARCH_BATCHES && docs.length < needed; rawPage += 1) {
+    const result = await requestAlbumDocs(query, rawPage, SEARCH_BATCH_SIZE, signal);
+    for (const doc of result.docs) {
+      if (isSpokenWordArchiveItem(doc) || seen.has(doc.identifier)) continue;
+      seen.add(doc.identifier);
+      docs.push(doc);
+    }
+    if (result.docs.length < SEARCH_BATCH_SIZE || rawPage * SEARCH_BATCH_SIZE >= result.total) break;
+  }
+
+  return {
+    albums: docs.slice(start, start + SEARCH_PAGE_SIZE).map((doc) => toAlbum(doc)),
+    hasMore: docs.length > start + SEARCH_PAGE_SIZE,
+  };
 }
 
 function hasPhrase(value: string, phrase: string): boolean {
@@ -266,15 +291,36 @@ function hasShortArtistToken(variants: string[]): boolean {
 }
 
 function artistCollectionTokens(doc: Doc): string[] {
-  return one(doc.collection).toLowerCase().split(/[;,\s]+/).filter(Boolean);
+  return one(doc.collection)
+    .toLowerCase()
+    .split(/[;,|\s]+/)
+    .map((name) => name.replace(/[^a-z0-9]+/g, ""))
+    .filter(Boolean);
+}
+
+function hasSpokenWordCollection(doc: Doc): boolean {
+  return artistCollectionTokens(doc).some((name) =>
+    name.startsWith("podcast") ||
+    name.startsWith("audiobook") ||
+    name.startsWith("audioboo") ||
+    name.startsWith("librivox") ||
+    name.includes("gutenberg") ||
+    name.startsWith("openlibrary") ||
+    name.includes("internetarchivebooks") ||
+    name.startsWith("spokenword"),
+  );
+}
+
+/** Filters book readings and talk recordings that Archive also indexes as mediatype:audio. */
+function isSpokenWordArchiveItem(doc: Doc): boolean {
+  if (hasSpokenWordCollection(doc)) return true;
+  const metadata = ` ${normalizeSearchText(`${one(doc.title)} ${one(doc.subject)} ${one(doc.creator)}`)} `;
+  return SPOKEN_WORD_MARKERS.some((marker) => metadata.includes(` ${marker} `));
 }
 
 function isNoisyArtistSource(doc: Doc): boolean {
-  const collections = artistCollectionTokens(doc);
-  // These imported sets contain a disproportionate number of covers, spoken-word items, and unrelated matches.
-  return collections.some((name) =>
-    name === "jamendo-albums" || name.startsWith("podcasts") || name.startsWith("audiobook") || name.startsWith("audioboo"),
-  );
+  // Jamendo imports contain many covers; book and speech collections are never artist-album results.
+  return artistCollectionTokens(doc).includes("jamendoalbums") || isSpokenWordArchiveItem(doc);
 }
 
 function artistFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
@@ -289,6 +335,7 @@ function titleFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undef
 }
 
 function anyFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
+  if (isNoisyArtistSource(doc)) return undefined;
   let best: AlbumSearchMatch | undefined;
   for (const variant of variants) {
     const phrase = normalizeSearchText(variant);

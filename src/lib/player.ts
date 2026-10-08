@@ -266,7 +266,7 @@ class Engine {
       try {
         const row = await db.settings.get(`pl:${sourcePlaylistId}`);
         const playlist = row?.value as Playlist | undefined;
-        if (playlist?.id === sourcePlaylistId) sourceContext = { kind: "playlist", title: playlist.name };
+        if (playlist?.id === sourcePlaylistId) sourceContext = { kind: "playlist", title: fixText(playlist.name) };
       } catch {
         // Старый или удалённый плейлист не должен мешать восстановлению станции.
       }
@@ -293,7 +293,7 @@ class Engine {
             queue = validQueue.length ? validQueue : stations.map((item) => item.id);
             if (!queue.includes(id)) queue = [id, ...queue];
             sourcePlaylistId = playlist.id;
-            sourceContext = { kind: "playlist", title: playlist.name };
+            sourceContext = { kind: "playlist", title: fixText(playlist.name) };
           }
         }
       } catch {

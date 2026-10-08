@@ -185,6 +185,47 @@ async function offlineState(page: Page) {
   });
 }
 
+test("repairs CP1251 mojibake in Archive track titles before playback", async ({ page }) => {
+  const firstTitle = "Романс - Первая любовь";
+  const secondTitle = "Романс - Вторая любовь";
+  await mockArchive(page, "mojibake-track-fixture", "Fixture jazz album", [
+    { file: "01 - first.mp3", title: "Ðîìàíñ - Ïåðâàÿ ëþáîâü", seconds: 20, frequency: 440 },
+    { file: "02 - second.mp3", title: "Ðîìàíñ - Âòîðàÿ ëþáîâü", seconds: 20, frequency: 660 },
+  ]);
+  await openAsGuest(page);
+  await openFixtureAlbum(page);
+  await expect(page.getByRole("button", { name: `Включить «${firstTitle}»` })).toBeVisible();
+
+  await page.getByRole("button", { name: `Включить «${firstTitle}»` }).click();
+  await expect(page.getByRole("heading", { name: firstTitle })).toBeVisible();
+  await expect(page.getByRole("dialog").last().getByRole("button", { name: new RegExp(secondTitle) })).toBeVisible();
+});
+
+test("repairs a mojibake title already stored in an offline playlist", async ({ page }) => {
+  const title = "Романс - Первая любовь";
+  await openAsGuest(page);
+  await page.evaluate(async (rawTitle) => {
+    const { db } = await import("/src/lib/db.ts");
+    await db.settings.put({
+      key: "pl:legacy-title-fixture",
+      value: {
+        id: "legacy-title-fixture",
+        name: "Legacy Archive songs",
+        desc: "",
+        items: [{ id: "legacy-title-track", title: rawTitle, url: "https://archive.org/download/legacy-title-fixture/track.mp3", kind: "vod", addedAt: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+  }, "Ðîìàíñ - Ïåðâàÿ ëþáîâü");
+
+  await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
+  const legacyPlaylist = page.getByRole("button", { name: 'Открыть «Legacy Archive songs»' });
+  await expect(legacyPlaylist).toBeVisible();
+  await legacyPlaylist.click();
+  await expect(page.getByRole("button", { name: `Включить «${title}»` })).toBeVisible();
+});
+
 test("FullPlayer returns to an unsaved album track list", async ({ page }) => {
   await mockArchive(page, "unsaved-return-fixture", "Fixture jazz album", [
     { file: "01 - unsaved.mp3", title: "Unsaved Track", seconds: 20, frequency: 440 },

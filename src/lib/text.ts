@@ -1,9 +1,10 @@
 /**
- * Исправляет mojibake: UTF-8, который сервер или ID3-тег ошибочно объявил как latin1/cp1251.
- * Пример: «ÐœÑƒÐ·Ñ‹ÐºÐ°» / «РњСѓР·С‹РєР°» → «Музыка».
+ * Исправляет mojibake из UTF-8/CP1251/Latin-1/Windows-1252 метаданных.
+ * Примеры: «ÐœÑƒÐ·Ñ‹ÐºÐ°» → «Музыка», «Ðîìàíñ» → «Романс».
  */
 
 let cp1251Reverse: Map<string, number> | null = null;
+let cp1252Reverse: Map<string, number> | null = null;
 
 function cpMap(): Map<string, number> {
   if (cp1251Reverse) return cp1251Reverse;
@@ -13,6 +14,21 @@ function cpMap(): Map<string, number> {
   const chars = new TextDecoder("windows-1251").decode(bytes);
   Array.from(chars).forEach((c, i) => m.set(c, i));
   cp1251Reverse = m;
+  return m;
+}
+
+function cp1252Map(): Map<string, number> {
+  if (cp1252Reverse) return cp1252Reverse;
+  const m = new Map<string, number>();
+  const special = [
+    "€", "", "‚", "ƒ", "„", "…", "†", "‡", "ˆ", "‰", "Š", "‹", "Œ", "", "Ž", "",
+    "", "‘", "’", "“", "”", "•", "–", "—", "˜", "™", "š", "›", "œ", "", "ž", "Ÿ",
+  ];
+  for (let byte = 0; byte < 256; byte += 1) {
+    const char = byte >= 0x80 && byte <= 0x9f ? special[byte - 0x80] : String.fromCharCode(byte);
+    if (char) m.set(char, byte);
+  }
+  cp1252Reverse = m;
   return m;
 }
 
@@ -36,6 +52,22 @@ function bytesCp(s: string): Uint8Array | null {
     out[i] = n;
   }
   return out;
+}
+
+function bytesCp1252(s: string): Uint8Array | null {
+  const map = cp1252Map();
+  const chars = Array.from(s);
+  const out = new Uint8Array(chars.length);
+  for (let i = 0; i < chars.length; i++) {
+    const n = map.get(chars[i]);
+    if (n === undefined) return null;
+    out[i] = n;
+  }
+  return out;
+}
+
+function decode1251(bytes: Uint8Array | null): string | null {
+  return bytes ? new TextDecoder("windows-1251").decode(bytes) : null;
 }
 
 function utf8(bytes: Uint8Array | null): string | null {
@@ -62,7 +94,13 @@ export function fixText(raw: string | undefined | null): string {
   if (!raw) return "";
   let value = raw.replace(/\0/g, "").trim();
   for (let round = 0; round < 3; round++) {
-    const candidates = [utf8(bytesLatin(value)), utf8(bytesCp(value))].filter((x): x is string => !!x && x !== value);
+    const latinBytes = bytesLatin(value);
+    const candidates = [
+      utf8(latinBytes),
+      utf8(bytesCp(value)),
+      utf8(bytesCp1252(value)),
+      decode1251(latinBytes),
+    ].filter((x): x is string => !!x && x !== value);
     let best = value;
     let score = badness(value);
     for (const c of candidates) {

@@ -10,6 +10,8 @@ export interface PickerRequest {
   suggest?: string;
   follow?: PlaylistFollow;
   cover?: string;
+  /** Start an offline download after the selected tracks are added or a playlist is created. */
+  downloadAfterAdd?: boolean;
 }
 
 let req: PickerRequest | null = null;
