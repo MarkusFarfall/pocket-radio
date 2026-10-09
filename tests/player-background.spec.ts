@@ -104,11 +104,7 @@ test("restores the last playlist track, queue, and position after a PWA reload",
   });
 
   await page.reload();
-  await page.waitForFunction(async () => {
-    const { player } = await import("/src/lib/player.ts");
-    return player.getState().station?.id === "pli:reload-second";
-  });
-  const restored = await page.evaluate(async () => {
+  const readRestored = () => page.evaluate(async () => {
     const { player } = await import("/src/lib/player.ts");
     return {
       stationId: player.getState().station?.id,
@@ -119,7 +115,9 @@ test("restores the last playlist track, queue, and position after a PWA reload",
     };
   });
 
-  expect(restored).toEqual({
+  // Poll through page.evaluate in the app's main world; waitForFunction runs in
+  // a separate execution world and can observe a different module singleton.
+  await expect.poll(readRestored).toEqual({
     stationId: "pli:reload-second",
     status: "paused",
     sourcePlaylistId: "reload-playlist",

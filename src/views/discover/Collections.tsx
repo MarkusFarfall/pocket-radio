@@ -19,9 +19,9 @@ const fmtNum = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 10
 
 const QUICK_OFFLINE_SEARCHES = {
   artist: [
-    { query: "a-ha", label: "a-ha" },
     { query: "Кино", label: "Кино" },
     { query: "Михаил Круг", label: "Михаил Круг" },
+    { query: "a-ha", label: "a-ha" },
     { query: "Talk Talk", label: "Talk Talk" },
   ],
   all: [
@@ -497,12 +497,13 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
           <SearchIcon size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             data-search
-            type="search"
+            type="text"
+            role="searchbox"
             aria-label="Запрос для поиска офлайн-музыки"
             autoComplete="off"
-            list="offline-music-search-suggestions"
+            enterKeyHint="search"
             maxLength={100}
-            className={cn(inputCls, "pl-10 pr-9")}
+            className={cn(inputCls, "offline-search-field pl-10 pr-10 focus-visible:outline-none")}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={scope === "artist" ? "Например: Кино, Михаил Круг, a-ha" : "Название альбома, песни или жанр"}
@@ -512,11 +513,6 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
               <X size={16} />
             </button>
           )}
-          <datalist id="offline-music-search-suggestions">
-            {[...QUICK_OFFLINE_SEARCHES[scope], ...(scope === "artist" ? ARCHIVE_GENRES.map((genre) => ({ query: genre.label, label: genre.label })) : [])].map((suggestion) => (
-              <option key={suggestion.query} value={suggestion.query} />
-            ))}
-          </datalist>
         </div>
         <button type="submit" className={btnPrimary} disabled={!textQuery(text, scope)}>
           <SearchIcon size={16} /> Найти
@@ -527,22 +523,26 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
           ? "Ищем исполнителя; если данных мало — проверяем названия. Жанр можно написать по-русски или выбрать ниже."
           : "Ищем точную фразу в исполнителях, названиях и жанровых темах. Русские названия жанров тоже понимаем."}
       </p>
-      <div role="group" className="flex flex-wrap items-center gap-1.5" aria-label="Популярные запросы">
-        <span className="mr-0.5 text-xs text-muted">{scope === "artist" ? "Исполнители:" : "Жанры:"}</span>
-        {QUICK_OFFLINE_SEARCHES[scope].map((suggestion) => (
-          <button
-            key={suggestion.query}
-            type="button"
-            aria-label={`Быстрый поиск: ${suggestion.label}`}
-            onClick={() => {
-              setText(suggestion.query);
-              submit(suggestion.query, scope, scope === "artist");
-            }}
-            className="rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-semibold text-muted transition hover:border-accent/40 hover:text-accent"
-          >
-            {suggestion.label}
-          </button>
-        ))}
+      <div role="group" className="flex min-w-0 items-center gap-1.5" aria-label="Популярные запросы">
+        <span className="shrink-0 text-xs font-medium text-muted">{scope === "artist" ? "Быстро:" : "Жанры:"}</span>
+        <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
+          <div className="flex w-max items-center gap-1.5 py-0.5">
+            {QUICK_OFFLINE_SEARCHES[scope].map((suggestion) => (
+              <button
+                key={suggestion.query}
+                type="button"
+                aria-label={`Быстрый поиск: ${suggestion.label}`}
+                onClick={() => {
+                  setText(suggestion.query);
+                  submit(suggestion.query, scope, scope === "artist");
+                }}
+                className="min-h-9 shrink-0 whitespace-nowrap rounded-full border border-line bg-bg/80 px-1 py-2 text-[11px] font-semibold text-muted transition hover:border-accent/40 hover:bg-accent/5 hover:text-accent sm:px-3 sm:text-xs"
+              >
+                {suggestion.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <select
           aria-label="Выбрать жанр"
           defaultValue=""
@@ -554,9 +554,9 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             submit(genre.label, "all");
             event.currentTarget.value = "";
           }}
-          className="max-w-[9rem] rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-semibold text-accent outline-none transition focus:border-accent/40"
+          className="min-h-9 max-w-[6.5rem] shrink-0 rounded-full border border-line bg-bg px-1.5 py-1 text-[11px] font-semibold text-accent outline-none transition focus:border-accent/40 sm:max-w-[9rem] sm:px-2.5 sm:py-1 sm:text-xs"
         >
-          <option value="">{scope === "artist" ? "Выбрать жанр…" : "Ещё жанры…"}</option>
+          <option value="">{scope === "artist" ? "Жанр…" : "Ещё жанры…"}</option>
           {ARCHIVE_GENRES.map((genre) => <option key={genre.id} value={genre.id}>{genre.label}</option>)}
         </select>
       </div>

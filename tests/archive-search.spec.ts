@@ -56,7 +56,27 @@ test("offline music search keeps the familiar layout and finds Russian genre nam
   await expect(page.getByRole("button", { name: "Быстрый поиск: Михаил Круг" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Быстрый поиск: Земфира" })).toHaveCount(0);
   await expect(page.getByLabel("Выбрать жанр")).toBeVisible();
-  await expect(page.locator('#offline-music-search-suggestions option[value="Кино"]')).toHaveCount(1);
+  const quickHintTops = await page.getByRole("button", { name: /Быстрый поиск:/ }).evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top));
+  expect(new Set(quickHintTops).size).toBe(1);
+  const quickScroll = page.getByRole("group", { name: "Популярные запросы" }).locator(".overflow-x-auto");
+  const quickScrollBox = await quickScroll.boundingBox();
+  for (const name of ["Кино", "Михаил Круг"]) {
+    const hintBox = await page.getByRole("button", { name: `Быстрый поиск: ${name}` }).boundingBox();
+    expect(hintBox).not.toBeNull();
+    expect(hintBox!.x).toBeGreaterThanOrEqual(quickScrollBox!.x);
+    expect(hintBox!.x + hintBox!.width).toBeLessThanOrEqual(quickScrollBox!.x + quickScrollBox!.width + 1);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  await expect(searchInput).toHaveAttribute("type", "text");
+  await expect(searchInput).toHaveAttribute("role", "searchbox");
+  await expect(page.locator('input[type="search"]')).toHaveCount(0);
+  await expect(page.locator("#offline-music-search-suggestions")).toHaveCount(0);
+  await searchInput.fill("временный запрос");
+  await expect(page.getByRole("button", { name: "Очистить запрос" })).toBeVisible();
+  expect(await searchInput.evaluate((input) => getComputedStyle(input).outlineStyle)).toBe("none");
+  await page.getByRole("button", { name: "Очистить запрос" }).click();
+  await expect(searchInput).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Очистить запрос" })).toHaveCount(0);
 
   // Даже в привычном режиме поиска по исполнителю точный русский жанр распознаётся автоматически.
   await searchInput.fill("рок");
