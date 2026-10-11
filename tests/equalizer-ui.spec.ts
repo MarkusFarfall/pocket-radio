@@ -37,6 +37,23 @@ async function openPlayerSettings(page: Page) {
   await expect(page.locator('[data-row="Эквалайзер"]')).toBeVisible();
 }
 
+test("an existing selected built-in preset is upgraded to its stronger current curve", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("radio.equalizer.v1", JSON.stringify({
+    enabled: true,
+    presetId: "bass",
+    gainsDb: [2, 3.5, 3, 1.5, 0.5, 0, 0, 0, 0, 0],
+    preampDb: 0,
+    autoHeadroom: true,
+    savedPresets: [],
+  })));
+  await openPlayerSettings(page);
+  await page.locator('[data-row="Эквалайзер"]').getByRole("button", { name: "Настроить эквалайзер" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("slider", { name: "Полоса 62 Гц" })).toHaveValue("6");
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("radio.equalizer.v1") ?? "{}"));
+  expect(stored.gainsDb[1]).toBe(6);
+});
+
 test("equalizer panel is reachable in settings, supports custom profiles, and remembers them", async ({ page }) => {
   await openPlayerSettings(page);
   await page.locator('[data-row="Эквалайзер"]').getByRole("button", { name: "Настроить эквалайзер" }).click();
@@ -47,10 +64,10 @@ test("equalizer panel is reachable in settings, supports custom profiles, and re
   await expect(dialog.getByRole("button", { name: "Больше баса", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   const bassBand = dialog.getByRole("slider", { name: "Полоса 62 Гц" });
-  await expect(bassBand).toHaveValue("3.5");
+  await expect(bassBand).toHaveValue("6");
   await bassBand.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(bassBand).toHaveValue("4");
+  await expect(bassBand).toHaveValue("6.5");
 
   await dialog.getByRole("button", { name: "Сохранить как свой профиль" }).click();
   await dialog.getByLabel("Название профиля эквалайзера").fill("Мои наушники");
@@ -74,7 +91,7 @@ test("equalizer panel is reachable in settings, supports custom profiles, and re
   const reopened = page.getByRole("dialog");
   await expect(reopened.getByRole("button", { name: "Мои наушники", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(reopened.getByRole("switch", { name: "Включить эквалайзер" })).toHaveAttribute("aria-checked", "true");
-  await expect(reopened.getByRole("slider", { name: "Полоса 62 Гц" })).toHaveValue("4");
+  await expect(reopened.getByRole("slider", { name: "Полоса 62 Гц" })).toHaveValue("6.5");
 });
 
 test("equalizer processes a local offline track and allows instant A/B comparison", async ({ page }) => {
@@ -96,7 +113,11 @@ test("equalizer processes a local offline track and allows instant A/B compariso
   await page.getByRole("button", { name: 'Включить «EQ Tone»' }).click();
   await expect(page.getByRole("button", { name: "Открыть плеер" })).toBeVisible();
   await page.getByRole("button", { name: "Открыть плеер" }).click();
-  await page.getByRole("button", { name: "Эквалайзер", exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 780 });
+  const actionRow = page.locator(".player-mobile .grid-cols-4");
+  const equalizerButton = actionRow.getByRole("button", { name: "Эквалайзер", exact: true });
+  await expect(equalizerButton).toBeVisible();
+  await equalizerButton.click();
 
   const panel = page.getByRole("dialog").last();
   await expect(panel.locator('p[role="status"]')).toContainText("Эквалайзер применяется к текущему источнику", { timeout: 10_000 });

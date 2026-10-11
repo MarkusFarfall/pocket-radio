@@ -4,6 +4,7 @@ import {
   EQUALIZER_BANDS,
   EQUALIZER_MAX_DB,
   EQUALIZER_MIN_DB,
+  EQUALIZER_PRESETS,
   defaultEqualizerSettings,
   deleteEqualizerPreset,
   equalizerPresetName,
@@ -23,8 +24,16 @@ test("equalizer presets are flat by default and provide a comfortable range of b
 
   const bass = selectEqualizerPreset(defaults, "bass");
   expect(equalizerPresetName(bass)).toBe("Больше баса");
-  expect(bass.gainsDb[1]).toBe(3.5);
+  expect(bass.gainsDb[1]).toBe(6);
   expect(defaults.gainsDb).toEqual(Array(10).fill(0));
+});
+
+test("non-flat built-in profiles have a clearly shaped, distinct response", () => {
+  const sculpted = EQUALIZER_PRESETS.filter((preset) => preset.id !== "flat");
+  expect(sculpted).toHaveLength(7);
+  for (const preset of sculpted) {
+    expect(Math.max(...preset.gainsDb) - Math.min(...preset.gainsDb), preset.name).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test("manual edits are bounded and saved profiles round-trip without changing the source curve", () => {
@@ -32,7 +41,7 @@ test("manual edits are bounded and saved profiles round-trip without changing th
   const edited = setEqualizerBand(bass, 1, 18);
   expect(edited.gainsDb[1]).toBe(12);
   expect(edited.presetId).toBe(CUSTOM_EQUALIZER_ID);
-  expect(bass.gainsDb[1]).toBe(3.5);
+  expect(bass.gainsDb[1]).toBe(6);
 
   const saved = saveEqualizerPreset(edited, "  My   headphones  ");
   expect(saved.savedPresets).toHaveLength(1);

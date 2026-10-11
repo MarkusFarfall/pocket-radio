@@ -638,11 +638,8 @@ export function FullPlayer({
             </div>
           )}
 
-          <div className="mt-2 flex items-center justify-center gap-2">
+          <div className="mt-2 flex items-center justify-center">
             <VolumePopover volume={p.volume} muted={p.muted} side="top" />
-            <button onClick={() => setEqualizerOpen(true)} className={cn("flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink", p.equalizer.enabled && "text-accent")} aria-label="Эквалайзер" aria-pressed={p.equalizer.enabled}>
-              <SlidersHorizontal size={17} /> Эквалайзер
-            </button>
           </div>
 
           {saved === null && (
@@ -651,11 +648,20 @@ export function FullPlayer({
             </button>
           )}
 
-          <div className="mt-3 grid grid-cols-3 gap-1">
+          <div className="mt-3 grid grid-cols-4 gap-1">
             <button onClick={() => void favorite(st)} className={cn("flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition", fav ? "text-accent" : "text-muted")}>
               <Heart size={19} className={fav ? "fill-current" : ""} /> {fav ? "Сохранено" : "Избранное"}
             </button>
             <AddToPlaylistButton station={st} className="flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold text-muted transition" label="Плейлист" size={19} />
+            <button
+              onClick={() => setEqualizerOpen(true)}
+              className={cn("flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold transition", p.equalizer.enabled ? "text-accent" : "text-muted")}
+              aria-label="Эквалайзер"
+              aria-pressed={p.equalizer.enabled}
+              title="Настроить эквалайзер"
+            >
+              <SlidersHorizontal size={20} /> Эквалайзер
+            </button>
             <button onClick={() => setMoreOpen(true)} className="flex flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-semibold text-muted"><MoreHorizontal size={20} /> Ещё</button>
           </div>
 

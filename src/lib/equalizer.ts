@@ -44,16 +44,16 @@ export interface EqualizerSettings {
 
 const zeros = () => EQUALIZER_BANDS.map(() => 0);
 
-/** Небольшие стартовые кривые: слух и наушники у всех разные, поэтому подъёмы намеренно умеренные. */
+/** Умеренные, но заметные стартовые кривые; их можно дополнительно подстроить под свои наушники. */
 export const EQUALIZER_PRESETS: EqualizerPreset[] = [
   { id: "flat", name: "Ровный", description: "Без изменения тембра", gainsDb: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-  { id: "bass", name: "Больше баса", description: "Мягкий подъём низких частот", gainsDb: [2, 3.5, 3, 1.5, 0.5, 0, 0, 0, 0, 0] },
-  { id: "pop", name: "Поп", description: "Чуть плотнее низ и яснее вокал", gainsDb: [1, 1.5, 1, 1.5, 0.5, 0, 1, 1.5, 1, 0.5] },
-  { id: "rock", name: "Рок", description: "Гитары и ударные без резкого верха", gainsDb: [2.5, 2, 1, 0, -1, 1, 2, 2.5, 2, 1] },
-  { id: "jazz", name: "Джаз", description: "Тёплый низ и воздушные тарелки", gainsDb: [2, 1.5, 0.5, 1, -1, 0, 1, 1.5, 2, 1.5] },
-  { id: "classical", name: "Классика", description: "Широкая сцена и мягкий баланс", gainsDb: [2, 1, 0, 0, -0.5, -0.5, 0, 1, 1.5, 1.5] },
-  { id: "voice", name: "Голос", description: "Разборчивее речь и вокал", gainsDb: [-4, -3, -1.5, 0, 1.5, 2.5, 3, 2, 0.5, -1] },
-  { id: "electronic", name: "Электроника", description: "Плотный бас и детальный верх", gainsDb: [3, 2, 0.5, -1, 0, 1, 2, 2, 1.5, 1] },
+  { id: "bass", name: "Больше баса", description: "Выразительный низ без гулкой середины", gainsDb: [3, 6, 5, 3.5, 1, 0, -1, -1, 0, 0] },
+  { id: "pop", name: "Поп", description: "Плотный бас и более заметный вокал", gainsDb: [2.5, 4, 3, 1.5, -1, 0, 2, 3.5, 3, 1.5] },
+  { id: "rock", name: "Рок", description: "Плотная атака гитар и ударных", gainsDb: [4, 5, 3, 0, -2.5, 1, 3.5, 4.5, 3, 2] },
+  { id: "jazz", name: "Джаз", description: "Тёплый низ, ясная середина и тарелки", gainsDb: [3, 2.5, 1, -0.5, -2, 0, 1.5, 3, 4, 3] },
+  { id: "classical", name: "Классика", description: "Немного глубины и воздуха без резкости", gainsDb: [2.5, 2, 0.5, -1, -1, 0, 1, 2.5, 3.5, 3] },
+  { id: "voice", name: "Голос", description: "Подчёркнутая разборчивость речи и вокала", gainsDb: [-5, -4, -2, 0, 2, 4.5, 5.5, 4, 1.5, -1] },
+  { id: "electronic", name: "Электроника", description: "Упругий низ и яркие детали", gainsDb: [5.5, 4.5, 2, 0, 0.5, 1.5, 3, 4, 3, 2] },
 ];
 
 export function defaultEqualizerSettings(): EqualizerSettings {
@@ -123,7 +123,15 @@ export function normalizeEqualizerSettings(value: unknown): EqualizerSettings {
 export function loadEqualizerSettings(): EqualizerSettings {
   try {
     const raw = localStorage.getItem(EQUALIZER_STORAGE_KEY);
-    return raw ? normalizeEqualizerSettings(JSON.parse(raw)) : defaultEqualizerSettings();
+    if (!raw) return defaultEqualizerSettings();
+    const settings = normalizeEqualizerSettings(JSON.parse(raw));
+    const preset = EQUALIZER_PRESETS.find((item) => item.id === settings.presetId);
+    if (!preset || settings.gainsDb.every((gain, index) => gain === preset.gainsDb[index])) return settings;
+    // Built-in profiles may be revised between app versions. A selected built-in preset
+    // can't be a manual edit (those become "custom"), so refresh it to the new curve.
+    const updated = { ...settings, gainsDb: [...preset.gainsDb] };
+    saveEqualizerSettings(updated);
+    return updated;
   } catch {
     return defaultEqualizerSettings();
   }
