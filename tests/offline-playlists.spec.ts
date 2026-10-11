@@ -586,7 +586,7 @@ test("adding offline music to an empty playlist saves its first track cover", as
 });
 
 test("local and online search modes remain distinct and usable", async ({ page }) => {
-  await page.route("https://*.api.radio-browser.info/**", async (route) => {
+  await page.route("**/api/radio-browser/**", async (route) => {
     const url = new URL(route.request().url());
     let data: unknown[] = [];
     if (url.pathname.includes("/stations/search")) {

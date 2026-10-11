@@ -1,39 +1,33 @@
 import type { Draft } from "./types";
 import { guessGenre } from "./genres";
 
-/** Клиент открытого каталога https://www.radio-browser.info (CORS включён, ключ не нужен). */
+/** Клиент открытого каталога https://www.radio-browser.info через same-origin proxy. */
 
-const SERVERS = [
-  "https://de1.api.radio-browser.info",
-  "https://de2.api.radio-browser.info",
-  "https://fi1.api.radio-browser.info",
-  "https://all.api.radio-browser.info",
-];
-let preferred = 0;
+const RADIO_BROWSER_API = "/api/radio-browser";
+const REQUEST_TIMEOUT_MS = 12_000;
 
 async function rb<T>(path: string, signal?: AbortSignal): Promise<T> {
-  let last: unknown = new Error("Каталог недоступен");
-  for (let i = 0; i < SERVERS.length; i++) {
-    const idx = (preferred + i) % SERVERS.length;
-    const ctl = new AbortController();
-    const onAbort = () => ctl.abort();
-    signal?.addEventListener("abort", onAbort);
-    const timer = setTimeout(() => ctl.abort(), 9000);
-    try {
-      const r = await fetch(SERVERS[idx] + path, { signal: ctl.signal });
-      if (!r.ok) throw new Error(`Сервер ответил ${r.status}`);
-      const data = (await r.json()) as T;
-      preferred = idx;
-      return data;
-    } catch (e) {
-      if (signal?.aborted) throw e;
-      last = e;
-    } finally {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
+  if (signal?.aborted) throw new DOMException("Запрос отменён", "AbortError");
+  const ctl = new AbortController();
+  const onAbort = () => ctl.abort();
+  signal?.addEventListener("abort", onAbort);
+  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${RADIO_BROWSER_API}${path}`, { signal: ctl.signal });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+      const message = typeof payload?.error === "string" ? payload.error : `Каталог Radio Browser временно недоступен (HTTP ${response.status})`;
+      throw new Error(message);
     }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (ctl.signal.aborted) throw new Error("Каталог Radio Browser не ответил вовремя");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
-  throw last;
 }
 
 interface RbStation {
@@ -218,7 +212,7 @@ export async function loadLanguages(): Promise<LangInfo[]> {
 export function registerClick(uuid: string) {
   const id = uuid.replace(/^rb-/, "");
   if (!/^[0-9a-f-]{20,}$/i.test(id)) return;
-  fetch(`${SERVERS[preferred]}/json/url/${id}`, { mode: "cors" }).catch(() => {});
+  fetch(`${RADIO_BROWSER_API}/json/url/${id}`).catch(() => {});
 }
 
 function mapStation(s: RbStation, url: string): Found {

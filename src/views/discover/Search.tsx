@@ -121,7 +121,14 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
       } catch (e) {
         if (c.signal.aborted) return;
         const msg = e instanceof Error ? e.message : "Не удалось загрузить";
-        setError(source === "garden" && /fetch|network/i.test(msg) ? "Не удалось связаться с сервером Radio Garden. Проверьте сеть или откройте сайт каталога." : msg);
+        const networkFailure = /fetch|network|load failed|connection|net::/i.test(msg);
+        setError(
+          networkFailure && source === "garden"
+            ? "Не удалось связаться с сервером Radio Garden. Проверьте сеть или откройте сайт каталога."
+            : networkFailure && source === "rb"
+              ? "Не удалось связаться с каталогом Radio Browser. Проверьте подключение к интернету и попробуйте ещё раз."
+              : msg
+        );
       } finally {
         if (!c.signal.aborted) setLoading(false);
       }

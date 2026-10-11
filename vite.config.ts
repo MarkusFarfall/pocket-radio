@@ -9,6 +9,14 @@ const radioGardenProxy = {
   rewrite: (path: string) => path.replace(/^\/api\/radio-garden/, "/api"),
 };
 
+const radioBrowserProxy = {
+  target: "https://all.api.radio-browser.info",
+  changeOrigin: true,
+  secure: true,
+  rewrite: (path: string) => path.replace(/^\/api\/radio-browser/, ""),
+  headers: { "User-Agent": "PocketRadio/1.0 (radio discovery)" },
+};
+
 function rewriteArchiveFile(path: string): string {
   const url = new URL(path, "http://vite.local");
   if (url.pathname !== "/api/archive-file") return path;
@@ -29,6 +37,7 @@ const archiveFileProxy = {
 };
 
 const proxy = {
+  "/api/radio-browser": radioBrowserProxy,
   "/api/radio-garden": radioGardenProxy,
   "/api/archive-file": archiveFileProxy,
 };

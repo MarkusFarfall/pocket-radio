@@ -31,9 +31,11 @@ const station = {
 
 test("station categories are Russian and category filters remain combined with station-name search", async ({ page }) => {
   const stationQueries: URL[] = [];
-  await page.route("https://**.api.radio-browser.info/**", async (route) => {
+  const radioBrowserRequests: URL[] = [];
+  await page.route("**/api/radio-browser/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/json/tags") {
+    radioBrowserRequests.push(url);
+    if (url.pathname.endsWith("/json/tags")) {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -45,15 +47,15 @@ test("station categories are Russian and category filters remain combined with s
       });
       return;
     }
-    if (url.pathname === "/json/countries") {
+    if (url.pathname.endsWith("/json/countries")) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ name: "Germany", iso_3166_1: "DE", stationcount: 30 }]) });
       return;
     }
-    if (url.pathname === "/json/languages") {
+    if (url.pathname.endsWith("/json/languages")) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ name: "english", iso_639: "en", stationcount: 30 }]) });
       return;
     }
-    if (url.pathname === "/json/stations/search") {
+    if (url.pathname.endsWith("/json/stations/search")) {
       stationQueries.push(url);
       const name = url.searchParams.get("name") ?? "";
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(name.toLowerCase().includes("no match") ? [] : [station]) });
@@ -95,10 +97,32 @@ test("station categories are Russian and category filters remain combined with s
   await expect(page.getByRole("button", { name: "Очистить запрос" })).toBeVisible();
   await page.getByRole("button", { name: "Снять фильтры" }).click();
   await expect.poll(() => stationQueries.some((url) => url.searchParams.get("name") === "No Match Radio" && !url.searchParams.has("tag"))).toBe(true);
+  expect(radioBrowserRequests.length).toBeGreaterThan(0);
+  expect(radioBrowserRequests.every((url) => url.origin === new URL(page.url()).origin)).toBe(true);
+});
+
+test("Radio Browser network failures show a localized retryable error", async ({ page }) => {
+  const requests: URL[] = [];
+  await page.route("**/api/radio-browser/**", async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url);
+    if (url.pathname.endsWith("/json/stations/search")) {
+      await route.abort("failed");
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+
+  await openStationSearch(page);
+  await expect(page.getByText(/Не удалось связаться с каталогом Radio Browser/)).toBeVisible();
+  expect(requests.some((url) => url.pathname.endsWith("/json/stations/search"))).toBe(true);
+  expect(requests.every((url) => url.origin === new URL(page.url()).origin)).toBe(true);
+  await expect(page.getByRole("button", { name: "Повторить" })).toBeVisible();
 });
 
 test("Radio Garden searches go through the same-origin proxy and map station results", async ({ page }) => {
   const gardenRequests: URL[] = [];
+  await page.route("**/api/radio-browser/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
   await page.route("**/api/radio-garden/search**", async (route) => {
     const url = new URL(route.request().url());
     gardenRequests.push(url);
