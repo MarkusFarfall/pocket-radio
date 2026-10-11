@@ -76,7 +76,7 @@ export interface SearchOpts {
   signal?: AbortSignal;
 }
 
-export async function searchStations(o: SearchOpts): Promise<Found[]> {
+async function searchOnce(o: SearchOpts): Promise<Found[]> {
   const q = new URLSearchParams();
   if (o.name) q.set("name", o.name);
   if (o.tag) q.set("tag", o.tag);
@@ -89,7 +89,10 @@ export async function searchStations(o: SearchOpts): Promise<Found[]> {
   q.set("limit", String(o.limit ?? 30));
   q.set("offset", String(o.offset ?? 0));
   q.set("hidebroken", "true");
-  q.set("is_https", "true");
+  // NB: намеренно НЕ фильтруем по is_https. Radio Browser хранит много популярных станций
+  // (в т.ч. крупные российские, напр. «Ретро ФМ») только с http-потоком, и этот фильтр
+  // вырезал их из выдачи (для «ретро фм»: 16 -> 3 результата, без флагмана). Проигрывание
+  // http-потоков на https-странице обеспечивает апгрейд в плеере (см. player.ts).
   const list = await rb<RbStation[]>(`/search?${q}`, o.signal);
   const seen = new Set<string>();
   const out: Found[] = [];
@@ -100,6 +103,96 @@ export async function searchStations(o: SearchOpts): Promise<Found[]> {
     out.push(mapStation(s, url));
   }
   return out;
+}
+
+/* ——— Транслитерация: фолбэк-поиск по второму алфавиту ———
+   Названия станций в Radio Browser записаны то кириллицей («Ретро ФМ»), то латиницей
+   («Retro FM»), а серверный поиск `name=` сопоставляет подстроку «как есть». Поэтому
+   кириллический запрос не находит латинскую карточку и наоборот. Добираем второй
+   вариант транслитерацией и склеиваем выдачи: сначала точные совпадения, затем —
+   найденные через транслит (без дублей по адресу). */
+
+const CYR_TO_LAT: Record<string, string> = {
+  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i",
+  й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t",
+  у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "",
+  э: "e", ю: "yu", я: "ya",
+};
+// Латинские digraphs -> кириллица (жадный разбор: сначала многобуквенные).
+const LAT_TO_CYR: [string, string][] = [
+  ["sch", "щ"], ["zh", "ж"], ["ch", "ч"], ["sh", "ш"], ["ts", "ц"], ["yu", "ю"],
+  ["ya", "я"], ["jo", "ё"], ["je", "э"], ["ih", "й"], ["kh", "х"],
+  ["a", "а"], ["b", "б"], ["v", "в"], ["g", "г"], ["d", "д"], ["e", "е"], ["z", "з"],
+  ["i", "и"], ["j", "й"], ["k", "к"], ["l", "л"], ["m", "м"], ["n", "н"], ["o", "о"],
+  ["p", "п"], ["r", "р"], ["s", "с"], ["t", "т"], ["u", "у"], ["f", "ф"], ["h", "х"],
+  ["c", "к"], ["w", "в"], ["x", "кс"], ["y", "й"], ["q", "к"],
+];
+
+function toLatin(s: string): string {
+  let out = "";
+  for (const ch of s.toLowerCase()) out += CYR_TO_LAT[ch] ?? ch;
+  return out.replace(/\s+/g, " ").trim();
+}
+
+function toCyrillic(s: string): string {
+  let out = "";
+  let i = 0;
+  const low = s.toLowerCase();
+  while (i < low.length) {
+    let matched = false;
+    for (const [lat, cyr] of LAT_TO_CYR) {
+      if (low.startsWith(lat, i)) {
+        out += cyr;
+        i += lat.length;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      out += low[i];
+      i++;
+    }
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
+const hasCyr = (s: string) => /[а-яё]/i.test(s);
+const hasLat = (s: string) => /[a-z]/i.test(s);
+
+/** Варианты запроса в другом алфавите (пусто, если транслитерация не меняет строку). */
+function translitVariants(name: string): string[] {
+  const out: string[] = [];
+  if (hasCyr(name)) out.push(toLatin(name));
+  if (hasLat(name)) out.push(toCyrillic(name));
+  return [...new Set(out.filter((v) => v && v.length > 1 && v !== name))];
+}
+
+/** Склеивает выдачи: порядок групп = приоритет, дубли по адресу отбрасываются. */
+function mergeFound(groups: Found[][]): Found[] {
+  const seen = new Set<string>();
+  const out: Found[] = [];
+  for (const g of groups) {
+    for (const s of g) {
+      const key = s.url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+  }
+  return out;
+}
+
+export async function searchStations(o: SearchOpts): Promise<Found[]> {
+  const primary = await searchOnce(o);
+  if (!o.name) return primary;
+
+  const variants = translitVariants(o.name);
+  if (variants.length === 0) return primary;
+
+  const extra = await Promise.all(
+    variants.map((v) => searchOnce({ ...o, name: v }).catch(() => [] as Found[])),
+  );
+  return mergeFound([primary, ...extra]);
 }
 
 export interface TagInfo {

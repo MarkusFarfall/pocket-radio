@@ -912,6 +912,13 @@ class Engine {
       }
     }
 
+    // http-поток на https-странице браузер блокирует (mixed content). Radio Browser
+    // хранит много популярных станций только с http-адресом, поэтому пробуем https —
+    // у большинства таких серверов он есть. Если нет, сработает обычный путь ошибки.
+    if ((st.kind === "hls" || st.kind === "http" || st.kind === "shoutcast") && mixedContentRisk(url)) {
+      url = url.replace(/^http:\/\//i, "https://");
+    }
+
     if (a === this.eqAudio) {
       // MediaElementAudioSourceNode can silently output zero for a cross-origin source without CORS.
       // Probe the exact final URL before connecting it; on failure attach() throws and the native
