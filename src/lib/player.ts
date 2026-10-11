@@ -117,6 +117,10 @@ class Engine {
   private ephemeral = new Map<string, Station>();
   private token = 0;
   private retries = 0;
+  private playlistRetries = 0;
+  private playlistRetryTimer: number | null = null;
+  private playlistRetryToken: number | null = null;
+  private playlistRetryInProgressToken: number | null = null;
   private bufferSince: number | null = null;
   private wasPlaying = false;
   private track: Track | null = null;
@@ -431,6 +435,8 @@ class Engine {
   async play(station: Station, queue?: string[], opts?: { fallback?: FallbackInfo; sourcePlaylistId?: string | null; sourceContext?: PlayerSourceContext | null }) {
     const sourcePlaylistId = opts?.sourcePlaylistId ?? null;
     const sourceContext: PlayerSourceContext | null = opts?.sourceContext ?? (sourcePlaylistId ? { kind: "playlist", title: "Плейлист" } : null);
+    this.clearPlaylistRetry();
+    this.playlistRetries = 0;
     this.wantsPlayback = true;
     // «разбудить» звук прямо в обработчике нажатия — на iOS иначе эмбиент потом не запустится
     ambient.prime();
@@ -489,6 +495,7 @@ class Engine {
         if (await this.fallbackEqToNative(station, my, position)) this.recordPlay(station);
         return;
       }
+      if (this.retryPlaylistTrack(station, my)) return;
       this.fail(err?.message || "Не удалось запустить поток", my);
       return;
     }
@@ -531,6 +538,7 @@ class Engine {
         this.set({ status: "paused" });
         return false;
       }
+      if (this.retryPlaylistTrack(station, my)) return false;
       this.fail(err?.message || "Не удалось воспроизвести поток", my);
       return false;
     }
@@ -581,6 +589,7 @@ class Engine {
 
   pause() {
     this.wantsPlayback = false;
+    this.clearPlaylistRetry();
     this.hiddenWhilePlaying = false;
     if (!this.state.station) return;
     const fb = this.state.fallback;
@@ -597,6 +606,7 @@ class Engine {
       this.set({ status: "paused", error: null });
     } else {
       this.audio.pause();
+      if (this.state.status === "loading") this.set({ status: "paused", error: null });
     }
   }
 
@@ -627,6 +637,7 @@ class Engine {
 
   /** Заменяет эфир фоновым звуком: источник отпускаем, но станция в плеере остаётся (или подменяется). */
   enterFallback(info: FallbackInfo, station?: Station, status: Status = "playing") {
+    this.clearPlaylistRetry();
     this.token++;
     this.switching = false;
     void this.closeTrack();
@@ -655,6 +666,7 @@ class Engine {
 
   stop() {
     this.wantsPlayback = false;
+    this.clearPlaylistRetry();
     this.hiddenWhilePlaying = false;
     if (this.state.fallback) this.fallbackStop?.(false);
     this.token++;
@@ -1013,6 +1025,89 @@ class Engine {
     }
   };
 
+  private clearPlaylistRetry() {
+    if (this.playlistRetryTimer !== null) window.clearTimeout(this.playlistRetryTimer);
+    this.playlistRetryTimer = null;
+    this.playlistRetryToken = null;
+  }
+
+  /** Retry a transient launch error for an offline-playlist item before treating it as a bad track. */
+  private retryPlaylistTrack(station: Station, my: number): boolean {
+    if (!station.id.startsWith("pli:") || my !== this.token || this.state.station?.id !== station.id || !this.wantsPlayback) return false;
+    if (this.playlistRetryToken === my || this.playlistRetryInProgressToken === my) return true;
+    if (this.playlistRetries >= 2) return false;
+
+    const attempt = ++this.playlistRetries;
+    this.playlistRetryToken = my;
+    this.set({ status: "loading", error: null });
+    this.playlistRetryTimer = window.setTimeout(() => {
+      this.playlistRetryTimer = null;
+      if (this.playlistRetryToken === my) this.playlistRetryToken = null;
+      if (my !== this.token) return;
+      if (!this.wantsPlayback) {
+        this.set({ status: "paused" });
+        return;
+      }
+      this.playlistRetryInProgressToken = my;
+      void this.retryPlaylistTrackAttempt(station, my);
+    }, 300 * attempt);
+    return true;
+  }
+
+  private async retryPlaylistTrackAttempt(station: Station, my: number) {
+    const finish = () => {
+      if (this.playlistRetryInProgressToken === my) this.playlistRetryInProgressToken = null;
+    };
+    if (my !== this.token) {
+      finish();
+      return;
+    }
+    if (!this.wantsPlayback) {
+      this.set({ status: "paused" });
+      finish();
+      return;
+    }
+
+    const position = !this.state.isLive && Number.isFinite(this.audio.currentTime) && this.audio.currentTime > 1
+      ? this.audio.currentTime
+      : station.resumePos;
+    this.switching = true;
+    this.audio.pause();
+    this.teardownSource();
+    try {
+      await this.attach(station, my, position);
+      if (my !== this.token) return;
+      this.switching = false;
+      if (!this.wantsPlayback) {
+        this.audio.pause();
+        this.set({ status: "paused" });
+        return;
+      }
+      await this.audio.play();
+      if (this.audio.error) throw new Error("Не удалось запустить аудиофайл");
+      if (my === this.token) this.recordPlay(station);
+    } catch (error) {
+      this.switching = false;
+      if (my !== this.token) return;
+      const err = error as DOMException;
+      if (err?.name === "AbortError") return;
+      if (!this.wantsPlayback || err?.name === "NotAllowedError") {
+        this.set({ status: "paused" });
+        return;
+      }
+      finish();
+      if (this.audio === this.eqAudio && this.state.equalizer.enabled) {
+        const currentPosition = !this.state.isLive && Number.isFinite(this.eqAudio.currentTime) ? this.eqAudio.currentTime : station.resumePos;
+        if (await this.fallbackEqToNative(station, my, currentPosition)) this.recordPlay(station);
+        return;
+      }
+      if (this.retryPlaylistTrack(station, my)) return;
+      this.fail(err?.message || "Не удалось запустить трек", my);
+    } finally {
+      finish();
+    }
+  }
+
   private onError = () => {
     const my = this.token;
     if (!this.audio.getAttribute("src")) return;
@@ -1032,6 +1127,8 @@ class Engine {
         ? "Браузер блокирует http-поток на https-странице. Используйте https-адрес"
         : "Формат не поддерживается или адрес недоступен";
     }
+    const station = this.state.station;
+    if (station && this.retryPlaylistTrack(station, my)) return;
     // navigator.onLine can briefly flip to false while Android reroutes traffic after VPN changes.
     // The global connectivity monitor decides whether the whole network is down; a stream error alone
     // should stay station-specific and still get the usual reconnect attempts.
@@ -1058,7 +1155,7 @@ class Engine {
   private onEnded = () => this.handleEnded();
 
   private handleEnded() {
-    if (this.switching || this.handledEndedToken === this.token) return;
+    if (this.switching || this.handledEndedToken === this.token || this.playlistRetryToken === this.token || this.playlistRetryInProgressToken === this.token) return;
     this.handledEndedToken = this.token;
     this.pauseTrack();
     // Некоторые mp3-файлы в плейлистах импортируются как обычный HTTP-источник, а не как VOD.

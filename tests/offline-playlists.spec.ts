@@ -243,6 +243,83 @@ test("FullPlayer returns to an unsaved album track list", async ({ page }) => {
   await expect(page.getByRole("button", { name: 'Включить «Unsaved Track»' })).toBeVisible();
 });
 
+test("offline playlist tracks retry a transient first-play failure before skipping", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    const w = window as Window & { __transientBlobPlayFailures?: number };
+    w.__transientBlobPlayFailures = 0;
+    let rejectFirstBlobPlay = true;
+    const nativePlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      if (rejectFirstBlobPlay && this.src.startsWith("blob:")) {
+        rejectFirstBlobPlay = false;
+        w.__transientBlobPlayFailures = (w.__transientBlobPlayFailures ?? 0) + 1;
+        return Promise.reject(new DOMException("transient offline playback failure", "NotSupportedError"));
+      }
+      return nativePlay.call(this);
+    };
+  });
+  await openAsGuest(page);
+  await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
+  await page.getByRole("button", { name: "Новый плейлист" }).click();
+  await page.getByLabel("Название").fill("Retry Mix");
+  await page.getByRole("dialog").getByRole("button", { name: "Создать", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Retry Mix" })).toBeVisible();
+  await page.locator('input[type="file"][multiple][accept*=".wav"]').setInputFiles([
+    { name: "01 - Alpha.wav", mimeType: "audio/wav", buffer: wav(20, 440) },
+    { name: "02 - Beta.wav", mimeType: "audio/wav", buffer: wav(20, 660) },
+  ]);
+  await expect(page.getByText("Alpha", { exact: true })).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByText("Beta", { exact: true })).toBeVisible({ timeout: 12_000 });
+
+  await context.setOffline(true);
+  await page.getByRole("main").getByRole("button", { name: "Слушать", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Открыть плеер" })).toBeVisible();
+  await page.getByRole("button", { name: "Открыть плеер" }).click();
+  await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => (window as Window & { __transientBlobPlayFailures?: number }).__transientBlobPlayFailures)).toBe(1);
+  await expect(page.getByRole("button", { name: "Пауза" }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Beta" })).toHaveCount(0);
+});
+
+test("offline playlists exhaust retries before skipping a permanently unavailable track", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    const w = window as Window & { __persistentAlphaPlayFailures?: number };
+    w.__persistentAlphaPlayFailures = 0;
+    const nativePlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = async function () {
+      if (this.src.startsWith("blob:")) {
+        const blob = await fetch(this.src).then((response) => response.blob());
+        if (blob.size === 44 + 20 * 8_000 * 2) {
+          w.__persistentAlphaPlayFailures = (w.__persistentAlphaPlayFailures ?? 0) + 1;
+          throw new DOMException("persistent offline playback failure", "NotSupportedError");
+        }
+      }
+      return nativePlay.call(this);
+    };
+  });
+  await openAsGuest(page);
+  await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
+  await page.getByRole("button", { name: "Новый плейлист" }).click();
+  await page.getByLabel("Название").fill("Unavailable Mix");
+  await page.getByRole("dialog").getByRole("button", { name: "Создать", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Unavailable Mix" })).toBeVisible();
+  await page.locator('input[type="file"][multiple][accept*=".wav"]').setInputFiles([
+    { name: "01 - Alpha.wav", mimeType: "audio/wav", buffer: wav(20, 440) },
+    { name: "02 - Beta.wav", mimeType: "audio/wav", buffer: wav(21, 660) },
+  ]);
+  await expect(page.getByText("Alpha", { exact: true })).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByText("Beta", { exact: true })).toBeVisible({ timeout: 12_000 });
+
+  await context.setOffline(true);
+  await page.getByRole("main").getByRole("button", { name: "Слушать", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Открыть плеер" })).toBeVisible();
+  await page.getByRole("button", { name: "Открыть плеер" }).click();
+  await expect(page.getByRole("heading", { name: "Alpha" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Beta" })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(async () => page.evaluate(() => (window as Window & { __persistentAlphaPlayFailures?: number }).__persistentAlphaPlayFailures)).toBe(3);
+  await expect(page.getByRole("button", { name: "Пауза" }).first()).toBeVisible();
+});
+
 test("downloaded collection tracks play from cache offline and advance in queue", async ({ page, context }) => {
   await mockArchive(page, "offline-fixture", "Fixture jazz album", [
     { file: "01 - track-one.mp3", title: "Track One", seconds: 3, frequency: 440 },
