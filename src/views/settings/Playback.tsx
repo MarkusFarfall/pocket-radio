@@ -1,7 +1,10 @@
-import { Zap } from "lucide-react";
+import { useState } from "react";
+import { SlidersHorizontal, Zap } from "lucide-react";
+import { EqualizerPanel } from "../../components/EqualizerPanel";
 import { Toggle, btnGhost } from "../../components/ui";
 import { player, usePlayer } from "../../lib/player";
 import { setAppPrefs, useAppPrefs, wakeSupported } from "../../lib/appPrefs";
+import { equalizerPresetName } from "../../lib/equalizer";
 import { Group, Row, Seg } from "./parts";
 
 const START_TABS = [
@@ -15,6 +18,7 @@ const START_TABS = [
 export function Playback() {
   const p = usePlayer();
   const a = useAppPrefs();
+  const [equalizerOpen, setEqualizerOpen] = useState(false);
   return (
     <>
       <Group title="Воспроизведение">
@@ -42,6 +46,18 @@ export function Playback() {
           )}
         </Row>
       </Group>
+
+      <Group title="Звук">
+        <Row title="Эквалайзер" desc={`Профиль «${equalizerPresetName(p.equalizer)}» · ${p.equalizer.enabled ? "включён" : "выключен"}. Применяется к совместимым потокам и эмбиенту.`}>
+          <div className="flex shrink-0 items-center gap-2">
+            <Toggle checked={p.equalizer.enabled} onChange={(enabled) => player.updateEqualizer({ ...p.equalizer, enabled })} label="Включить эквалайзер" />
+            <button type="button" onClick={() => setEqualizerOpen(true)} className={btnGhost} aria-label="Настроить эквалайзер">
+              <SlidersHorizontal size={16} /> Настроить
+            </button>
+          </div>
+        </Row>
+      </Group>
+      <EqualizerPanel open={equalizerOpen} onClose={() => setEqualizerOpen(false)} />
 
       <Group title="Приложение">
         <Row title="Открывать с раздела" stack>

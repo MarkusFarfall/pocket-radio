@@ -65,7 +65,14 @@ export function StationForm({ open, editing, draft, stations, onClose, onSaved, 
     setTried(false);
   }, [open, editing, draft]);
 
-  const tpl = TEMPLATES.find((t) => t.kind === kind)!;
+  const tpl = TEMPLATES.find((t) => t.kind === kind) ?? {
+    kind: "lan" as const,
+    label: "Локальная сеть",
+    short: "Внутренний аудиопоток",
+    placeholder: "http://192.168.1.10:8000/stream",
+    hint: "Прямой поток в локальной сети. Устройство должно быть подключено к той же сети.",
+    bitrate: 128,
+  };
   const urlOk = validUrl(url);
   const norm = urlOk ? normalizeUrl(url) : "";
   const dup = useMemo(() => (norm ? stations.find((s) => s.url === norm && s.id !== editing?.id) : undefined), [norm, stations, editing]);
@@ -89,7 +96,7 @@ export function StationForm({ open, editing, draft, stations, onClose, onSaved, 
       const g = guessKind(normalizeUrl(v));
       if (g !== kind) {
         setKind(g);
-        setBitrate(TEMPLATES.find((t) => t.kind === g)!.bitrate);
+        setBitrate(TEMPLATES.find((t) => t.kind === g)?.bitrate ?? 128);
       }
     }
   };

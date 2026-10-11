@@ -21,6 +21,7 @@ import {
   RotateCcw,
   RotateCw,
   Share2,
+  SlidersHorizontal,
   SkipBack,
   SkipForward,
   Trash2,
@@ -39,6 +40,7 @@ import { toast } from "../lib/toast";
 import { cn } from "../utils/cn";
 import { Cover, Equalizer, Modal, btnGhost } from "./ui";
 import { VodCacheButton } from "./VodCache";
+import { EqualizerPanel } from "./EqualizerPanel";
 import { FallbackBanner } from "./FallbackBanner";
 import { AddToPlaylistButton } from "./PlaylistPicker";
 import { isPodcastMedia, mediaLabel } from "../lib/media";
@@ -354,6 +356,7 @@ function Seek({ className }: { className?: string }) {
 
 export function DockPlayer({ onOpen }: { onOpen: () => void }) {
   const p = usePlayer();
+  const [equalizerOpen, setEqualizerOpen] = useState(false);
   const st = p.station;
   const saved = useSavedStation(st);
   if (!st) return null;
@@ -415,6 +418,9 @@ export function DockPlayer({ onOpen }: { onOpen: () => void }) {
 
       <div className="flex items-center justify-end gap-1">
         <VolumePopover volume={p.volume} muted={p.muted} side="top" />
+        <button onClick={() => setEqualizerOpen(true)} className={cn(ctl, p.equalizer.enabled && "text-accent")} aria-label="Эквалайзер" aria-pressed={p.equalizer.enabled} title="Настроить эквалайзер">
+          <SlidersHorizontal size={18} />
+        </button>
         <button onClick={onOpen} className={ctl} aria-label="Развернуть плеер" title="Развернуть">
           <Maximize2 size={18} />
         </button>
@@ -422,6 +428,7 @@ export function DockPlayer({ onOpen }: { onOpen: () => void }) {
           <X size={18} />
         </button>
       </div>
+      <EqualizerPanel open={equalizerOpen} onClose={() => setEqualizerOpen(false)} />
     </div>
   );
 }
@@ -540,6 +547,7 @@ export function FullPlayer({
   const appearance = usePlayerAppearance();
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [equalizerOpen, setEqualizerOpen] = useState(false);
 
   useEffect(() => setConfirmRemove(false), [st?.id, open]);
 
@@ -630,7 +638,12 @@ export function FullPlayer({
             </div>
           )}
 
-          <div className="mt-2 flex justify-center"><VolumePopover volume={p.volume} muted={p.muted} side="top" /></div>
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <VolumePopover volume={p.volume} muted={p.muted} side="top" />
+            <button onClick={() => setEqualizerOpen(true)} className={cn("flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink", p.equalizer.enabled && "text-accent")} aria-label="Эквалайзер" aria-pressed={p.equalizer.enabled}>
+              <SlidersHorizontal size={17} /> Эквалайзер
+            </button>
+          </div>
 
           {saved === null && (
             <button onClick={async () => toast((await saveToLibrary(st)) ? "Добавлено в каталог" : "Такой адрес уже в каталоге", "ok")} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-accent-ink">
@@ -801,7 +814,12 @@ export function FullPlayer({
                 )}
               </div>
 
-              <div className="mt-5 flex justify-center"><VolumePopover volume={p.volume} muted={p.muted} side="top" /></div>
+              <div className="mt-5 flex items-center justify-center gap-2">
+                <VolumePopover volume={p.volume} muted={p.muted} side="top" />
+                <button onClick={() => setEqualizerOpen(true)} className={cn("flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold text-muted transition hover:bg-surface-2 hover:text-ink", p.equalizer.enabled && "text-accent")} aria-label="Эквалайзер" aria-pressed={p.equalizer.enabled}>
+                  <SlidersHorizontal size={17} /> Эквалайзер
+                </button>
+              </div>
             </div>
 
             {/* правая колонка: действия и сведения */}
@@ -889,6 +907,7 @@ export function FullPlayer({
           </div>
         </div>
       </div>
+      <EqualizerPanel open={equalizerOpen} onClose={() => setEqualizerOpen(false)} />
     </Modal>
   );
 }

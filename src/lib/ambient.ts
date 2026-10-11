@@ -3,6 +3,8 @@
  * Сцены подбираются по жанру и настроению станции, к которой пропала связь.
  */
 
+import { applyEqualizerGraph, createEqualizerGraph, defaultEqualizerSettings, type EqualizerGraph, type EqualizerSettings } from "./equalizer";
+
 export type SceneId = "drift" | "lofi" | "lounge" | "pulse" | "piano" | "rain" | "waves";
 
 export interface SceneInfo {
@@ -521,6 +523,9 @@ class AmbientEngine {
   private idle: number | null = null;
   private current: SceneId | null = null;
   private volume = 0.6;
+  private eqGraph: EqualizerGraph | null = null;
+  private eqSettings: EqualizerSettings = defaultEqualizerSettings();
+  private eqBypass = false;
   private gen = 0;
 
   get scene(): SceneId | null {
@@ -544,11 +549,22 @@ class AmbientEngine {
     comp.release.value = 0.3;
     const master = ac.createGain();
     master.gain.value = this.volume;
-    master.connect(comp);
+    this.eqGraph = createEqualizerGraph(ac, master, comp);
     comp.connect(ac.destination);
     this.ac = ac;
     this.master = master;
+    this.applyEqualizer();
     return ac;
+  }
+
+  private applyEqualizer() {
+    if (this.ac && this.eqGraph) applyEqualizerGraph(this.eqGraph, this.ac, this.eqSettings, this.eqBypass);
+  }
+
+  setEqualizer(settings: EqualizerSettings, bypass = false) {
+    this.eqSettings = settings;
+    this.eqBypass = bypass;
+    this.applyEqualizer();
   }
 
   private assets(ac: AudioContext) {

@@ -11,8 +11,23 @@ import { connectivity } from "./connectivity";
 import { isLanUrl, mixedContentRisk, uid } from "./templates";
 import { artworkFor } from "./artwork";
 import { toast } from "./toast";
+import {
+  applyEqualizerGraph,
+  createEqualizerGraph,
+  loadEqualizerSettings,
+  normalizeEqualizerSettings,
+  saveEqualizerPreset,
+  saveEqualizerSettings,
+  selectEqualizerPreset,
+  setEqualizerBand,
+  setEqualizerPreamp,
+  deleteEqualizerPreset,
+  type EqualizerGraph,
+  type EqualizerSettings,
+} from "./equalizer";
 
 export type Status = "idle" | "loading" | "playing" | "paused" | "buffering" | "error";
+export type EqualizerAvailability = "idle" | "checking" | "available" | "unavailable" | "unsupported";
 
 export interface Meta {
   title?: string;
@@ -47,6 +62,9 @@ export interface PlayerState {
   dataSaver: boolean;
   fromCache: boolean;
   rate: number;
+  equalizer: EqualizerSettings;
+  equalizerAvailability: EqualizerAvailability;
+  equalizerBypass: boolean;
   history: TrackEntry[];
   /** режим «нет интернета»: играет эмбиент или офлайн-станция вместо эфира */
   fallback: FallbackInfo | null;
@@ -82,7 +100,13 @@ interface Track {
 const FADE_MS = 20000;
 
 class Engine {
+  /** Active output: native playback stays untouched for streams which do not grant CORS. */
   private audio = new Audio();
+  private nativeAudio = this.audio;
+  private eqAudio = new Audio();
+  private eqContext: AudioContext | null = null;
+  private eqGraph: EqualizerGraph | null = null;
+  private sleepGain = 1;
   private hls: Hls | null = null;
   private state: PlayerState;
   private time: TimeState = { position: 0, duration: 0 };
@@ -106,6 +130,7 @@ class Engine {
   private wantsPlayback = false;
   private hiddenWhilePlaying = false;
   private handledEndedToken: number | null = null;
+  private equalizerFallbackToken: number | null = null;
 
   constructor() {
     const vol = Number(localStorage.getItem("radio.volume") ?? "0.8");
@@ -122,26 +147,115 @@ class Engine {
       dataSaver: localStorage.getItem("radio.dataSaver") === "1",
       fromCache: false,
       rate: Number(localStorage.getItem("radio.rate")) || 1,
+      equalizer: loadEqualizerSettings(),
+      equalizerAvailability: "idle",
+      equalizerBypass: false,
       history: [],
       fallback: null,
       sourcePlaylistId: null,
       sourceContext: null,
     };
-    const a = this.audio;
-    a.preload = "none";
-    a.volume = this.state.volume;
-    a.addEventListener("playing", this.onPlaying);
-    a.addEventListener("pause", this.onPause);
-    a.addEventListener("waiting", this.onWaiting);
-    a.addEventListener("error", this.onError);
-    a.addEventListener("ended", this.onEnded);
-    a.addEventListener("timeupdate", this.onTime);
-    a.addEventListener("durationchange", this.onTime);
+    this.nativeAudio.preload = "none";
+    this.eqAudio.preload = "none";
+    this.eqAudio.crossOrigin = "anonymous";
+    this.bindAudioEvents(this.nativeAudio);
+    this.bindAudioEvents(this.eqAudio);
+    this.applyAudioSettings(this.nativeAudio);
+    ambient.setEqualizer(this.state.equalizer);
     window.setInterval(() => this.flush(false), 10000);
     window.addEventListener("pagehide", this.onPageHide);
     window.addEventListener("pageshow", this.onPageShow);
     document.addEventListener("visibilitychange", this.onVisibilityChange);
     this.setupMediaSession();
+  }
+
+  private bindAudioEvents(audio: HTMLAudioElement) {
+    const active = (fn: () => void) => () => {
+      if (this.audio === audio) fn();
+    };
+    audio.addEventListener("playing", active(this.onPlaying));
+    audio.addEventListener("pause", active(this.onPause));
+    audio.addEventListener("waiting", active(this.onWaiting));
+    audio.addEventListener("error", active(this.onError));
+    audio.addEventListener("ended", active(this.onEnded));
+    audio.addEventListener("timeupdate", active(this.onTime));
+    audio.addEventListener("durationchange", active(this.onTime));
+    audio.addEventListener("canplay", active(() => {
+      if (audio === this.eqAudio && this.state.equalizer.enabled) this.set({ equalizerAvailability: "available" });
+    }));
+  }
+
+  private currentOutputLevel(): number {
+    return this.state.muted ? 0 : this.state.volume * this.sleepGain;
+  }
+
+  private applyAudioSettings(audio: HTMLAudioElement) {
+    const rate = this.state.station?.kind === "vod" ? this.state.rate : 1;
+    audio.defaultPlaybackRate = rate;
+    audio.playbackRate = rate;
+    this.applyOutputVolume(audio);
+  }
+
+  private applyOutputVolume(audio: HTMLAudioElement) {
+    if (audio === this.eqAudio) {
+      // Web Audio owns volume/mute after MediaElementAudioSourceNode takes the output.
+      audio.volume = 1;
+      audio.muted = false;
+      this.setEqualizerOutputLevel();
+    } else {
+      audio.volume = this.state.volume * this.sleepGain;
+      audio.muted = this.state.muted;
+    }
+  }
+
+  private setEqualizerOutputLevel() {
+    if (!this.eqGraph || !this.eqContext) return;
+    const param = this.eqGraph.outputGain.gain;
+    const level = this.currentOutputLevel();
+    try {
+      param.cancelScheduledValues(this.eqContext.currentTime);
+      param.setTargetAtTime(level, this.eqContext.currentTime, 0.025);
+    } catch {
+      param.value = level;
+    }
+  }
+
+  private applyEqualizerGraph() {
+    if (this.eqGraph && this.eqContext) {
+      applyEqualizerGraph(this.eqGraph, this.eqContext, this.state.equalizer, this.state.equalizerBypass, this.currentOutputLevel());
+    }
+  }
+
+  /** Create the graph only after a user gesture, and only on its isolated CORS-capable audio element. */
+  private ensureEqualizerGraph(): boolean {
+    if (this.eqGraph && this.eqContext) {
+      if (this.eqContext.state === "suspended") void this.eqContext.resume().catch(() => undefined);
+      return true;
+    }
+    const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+    const Ctor = w.AudioContext ?? w.webkitAudioContext;
+    if (!Ctor) return false;
+    let context: AudioContext | null = null;
+    try {
+      context = new Ctor();
+      this.eqAudio.crossOrigin = "anonymous";
+      const source = context.createMediaElementSource(this.eqAudio);
+      this.eqGraph = createEqualizerGraph(context, source, context.destination);
+      this.eqContext = context;
+      this.applyEqualizerGraph();
+      if (context.state === "suspended") void context.resume().catch(() => undefined);
+      return true;
+    } catch {
+      if (context) void context.close().catch(() => undefined);
+      this.eqContext = null;
+      this.eqGraph = null;
+      return false;
+    }
+  }
+
+  private useAudioElement(audio: HTMLAudioElement) {
+    this.audio = audio;
+    this.applyAudioSettings(audio);
   }
 
   private markHidden = () => {
@@ -320,12 +434,18 @@ class Engine {
     this.wantsPlayback = true;
     // «разбудить» звук прямо в обработчике нажатия — на iOS иначе эмбиент потом не запустится
     ambient.prime();
+    const useEq = this.state.equalizer.enabled;
+    // Создаём и будим контекст только по запросу пользователя. Нативный элемент не подключаем к Web Audio.
+    const eqReady = useEq && this.ensureEqualizerGraph();
     // обычный запуск станции выключает режим «нет интернета» (эмбиент останавливается)
     if (this.state.fallback && !opts?.fallback) this.fallbackStop?.(false);
     const my = ++this.token;
+    this.equalizerFallbackToken = null;
     this.switching = true;
     await this.closeTrack();
+    this.audio.pause();
     this.teardownSource();
+    this.useAudioElement(eqReady ? this.eqAudio : this.nativeAudio);
     this.retries = 0;
     this.bufferSince = null;
     const q = queue ?? this.state.queue;
@@ -340,11 +460,11 @@ class Engine {
       fallback: opts?.fallback ?? null,
       sourcePlaylistId,
       sourceContext,
+      equalizerAvailability: useEq ? (eqReady ? "checking" : "unsupported") : "idle",
+      equalizerBypass: false,
     });
     this.setTime({ position: station.resumePos ?? 0, duration: 0 });
-    const rate = station.kind === "vod" ? this.state.rate : 1;
-    this.audio.defaultPlaybackRate = rate;
-    this.audio.playbackRate = rate;
+    this.applyAudioSettings(this.audio);
     void setSetting("lastStationId", station.id);
     void setSetting("lastQueue", this.state.queue);
     void setSetting("lastSourcePlaylistId", this.state.sourcePlaylistId);
@@ -363,14 +483,93 @@ class Engine {
         this.set({ status: "paused" });
         return;
       }
+      if (this.equalizerFallbackToken === my) return;
+      if (eqReady && this.audio === this.eqAudio) {
+        const position = station.kind === "vod" && Number.isFinite(this.eqAudio.currentTime) ? this.eqAudio.currentTime : station.resumePos;
+        if (await this.fallbackEqToNative(station, my, position)) this.recordPlay(station);
+        return;
+      }
       this.fail(err?.message || "Не удалось запустить поток", my);
       return;
     }
     this.switching = false;
+    this.recordPlay(station);
+  }
+
+  private recordPlay(station: Station) {
     void db.stations.where("id").equals(station.id).modify((s) => {
       s.plays = (s.plays || 0) + 1;
       s.lastPlayedAt = Date.now();
     });
+  }
+
+  /** A CORS failure on the isolated EQ element must never silence the original native path. */
+  private async fallbackEqToNative(station: Station, my: number, resumePosition?: number): Promise<boolean> {
+    if (my !== this.token || this.audio !== this.eqAudio || this.equalizerFallbackToken === my) return false;
+    this.equalizerFallbackToken = my;
+    const resume = this.wantsPlayback && this.state.status !== "paused" && this.state.status !== "idle";
+    this.switching = true;
+    this.eqAudio.pause();
+    await this.closeTrack();
+    this.teardownSource();
+    this.useAudioElement(this.nativeAudio);
+    this.retries = 0;
+    this.bufferSince = null;
+    this.set({ equalizerAvailability: "unavailable", equalizerBypass: false, status: resume ? "loading" : "paused", error: null });
+    this.setTime({ position: !this.state.isLive && Number.isFinite(resumePosition) ? resumePosition! : 0, duration: 0 });
+    try {
+      await this.attach(station, my, resumePosition);
+      if (my !== this.token) return false;
+      this.switching = false;
+      if (resume) await this.audio.play();
+      return true;
+    } catch (error) {
+      this.switching = false;
+      if (my !== this.token) return false;
+      const err = error as DOMException;
+      if (err?.name === "NotAllowedError") {
+        this.set({ status: "paused" });
+        return false;
+      }
+      this.fail(err?.message || "Не удалось воспроизвести поток", my);
+      return false;
+    }
+  }
+
+  private async switchCurrentToEqualizer() {
+    const station = this.state.station;
+    if (!station || this.state.fallback || this.audio !== this.nativeAudio || !this.state.equalizer.enabled) return;
+    if (!this.ensureEqualizerGraph()) {
+      this.set({ equalizerAvailability: "unsupported" });
+      return;
+    }
+    const my = ++this.token;
+    const resume = this.wantsPlayback && ["playing", "buffering", "loading"].includes(this.state.status);
+    const position = !this.state.isLive && Number.isFinite(this.nativeAudio.currentTime) ? this.nativeAudio.currentTime : station.resumePos;
+    this.switching = true;
+    await this.closeTrack();
+    this.nativeAudio.pause();
+    this.teardownSource();
+    this.useAudioElement(this.eqAudio);
+    this.set({ status: resume ? "loading" : "paused", error: null, equalizerAvailability: "checking", equalizerBypass: false });
+    this.setTime({ position: !this.state.isLive && Number.isFinite(position) ? position! : 0, duration: 0 });
+    try {
+      await this.attach(station, my, position);
+      if (my !== this.token) return;
+      this.switching = false;
+      if (resume) await this.audio.play();
+      this.updateMediaSession();
+    } catch (error) {
+      this.switching = false;
+      if (my !== this.token) return;
+      const err = error as DOMException;
+      if (err?.name === "AbortError") return;
+      if (err?.name === "NotAllowedError") {
+        this.set({ status: "paused" });
+        return;
+      }
+      await this.fallbackEqToNative(station, my, position);
+    }
   }
 
   toggle() {
@@ -498,8 +697,8 @@ class Engine {
 
   toggleMute() {
     const m = !this.state.muted;
-    this.audio.muted = m;
     this.set({ muted: m });
+    this.applyAudioSettings(this.audio);
   }
 
   setRate(r: number) {
@@ -523,9 +722,9 @@ class Engine {
 
   setVolume(v: number) {
     const vol = Math.min(1, Math.max(0, v));
-    this.audio.volume = vol;
     localStorage.setItem("radio.volume", String(vol));
     this.set({ volume: vol });
+    this.applyAudioSettings(this.audio);
   }
 
   seek(sec: number) {
@@ -546,10 +745,62 @@ class Engine {
     }
   }
 
+  updateEqualizer(settings: EqualizerSettings) {
+    const previous = this.state.equalizer;
+    const next = normalizeEqualizerSettings(settings);
+    const enabling = !previous.enabled && next.enabled;
+    const ambientActive = this.state.fallback?.kind === "ambient";
+    const hasStation = !!this.state.station;
+    const graphReady = !next.enabled || !hasStation || ambientActive || this.ensureEqualizerGraph();
+    const bypass = next.enabled ? this.state.equalizerBypass : false;
+    const availability: EqualizerAvailability = !next.enabled
+      ? (this.audio === this.eqAudio ? "available" : "idle")
+      : ambientActive ? "available" : hasStation ? (graphReady ? "checking" : "unsupported") : "idle";
+    this.set({ equalizer: next, equalizerBypass: bypass, equalizerAvailability: availability });
+    saveEqualizerSettings(next);
+    ambient.setEqualizer(next, bypass);
+    this.applyEqualizerGraph();
+    if (enabling && hasStation && !ambientActive && this.audio === this.nativeAudio && graphReady) {
+      void this.switchCurrentToEqualizer();
+    }
+  }
+
+  selectEqualizerPreset(id: string) {
+    this.updateEqualizer(selectEqualizerPreset(this.state.equalizer, id));
+  }
+
+  setEqualizerBand(index: number, gainDb: number) {
+    this.updateEqualizer(setEqualizerBand(this.state.equalizer, index, gainDb));
+  }
+
+  setEqualizerPreamp(preampDb: number) {
+    this.updateEqualizer(setEqualizerPreamp(this.state.equalizer, preampDb));
+  }
+
+  saveEqualizerPreset(name: string) {
+    const next = saveEqualizerPreset(this.state.equalizer, name);
+    if (next === this.state.equalizer) return false;
+    this.updateEqualizer(next);
+    return true;
+  }
+
+  deleteEqualizerPreset(id: string) {
+    this.updateEqualizer(deleteEqualizerPreset(this.state.equalizer, id));
+  }
+
+  setEqualizerBypass(bypass: boolean) {
+    const ambientActive = this.state.fallback?.kind === "ambient";
+    if (!this.state.equalizer.enabled || (!ambientActive && (this.audio !== this.eqAudio || this.state.equalizerAvailability !== "available"))) return;
+    this.set({ equalizerBypass: bypass });
+    this.applyEqualizerGraph();
+    ambient.setEqualizer(this.state.equalizer, bypass);
+  }
+
   setSleep(minutes: number | null) {
     if (this.sleepTimer) clearInterval(this.sleepTimer);
     this.sleepTimer = null;
-    this.audio.volume = this.state.volume;
+    this.sleepGain = 1;
+    this.applyOutputVolume(this.audio);
     if (!minutes) {
       this.set({ sleepAt: null });
       return;
@@ -562,16 +813,40 @@ class Engine {
         clearInterval(this.sleepTimer!);
         this.sleepTimer = null;
         this.pause();
-        this.audio.volume = this.state.volume;
+        this.sleepGain = 1;
+        this.applyOutputVolume(this.audio);
         this.set({ sleepAt: null });
         toast("Таймер сна сработал — воспроизведение остановлено", "info");
       } else if (left < FADE_MS) {
-        this.audio.volume = this.state.volume * (left / FADE_MS);
+        this.sleepGain = left / FADE_MS;
+        this.applyOutputVolume(this.audio);
       }
     }, 500);
   }
 
   /* ------------------------------- источник ------------------------------- */
+  private async hasCorsAccess(url: string, my: number): Promise<boolean> {
+    if (/^(?:blob:|data:)/i.test(url)) return true;
+    try {
+      if (new URL(url, location.href).origin === location.origin) return true;
+    } catch {
+      return false;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 2_500);
+    try {
+      const response = await fetch(url, { method: "GET", mode: "cors", cache: "no-store", signal: controller.signal });
+      if (my !== this.token) return false;
+      const allowed = response.ok || response.status === 206;
+      void response.body?.cancel().catch(() => undefined);
+      return allowed;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   private teardownSource() {
     this.loadAbort?.abort();
     this.loadAbort = null;
@@ -589,7 +864,7 @@ class Engine {
     }
   }
 
-  private async attach(st: Station, my: number) {
+  private async attach(st: Station, my: number, resumePosition: number | undefined = st.resumePos) {
     const a = this.audio;
     let url = st.url;
 
@@ -625,6 +900,17 @@ class Engine {
       }
     }
 
+    if (a === this.eqAudio) {
+      // MediaElementAudioSourceNode can silently output zero for a cross-origin source without CORS.
+      // Probe the exact final URL before connecting it; on failure attach() throws and the native
+      // audio element continues with the browser's normal, non-CORS playback path.
+      if (!(await this.hasCorsAccess(url, my))) {
+        if (my !== this.token) return;
+        throw new Error("Источник не разрешает безопасную обработку звука (CORS)");
+      }
+      if (my !== this.token) return;
+    }
+
     const isHls = st.kind === "hls" || /\.m3u8(\?|$)/i.test(st.url);
     if (isHls && !a.canPlayType("application/vnd.apple.mpegurl")) {
       const { default: HlsLib } = await import("hls.js");
@@ -641,6 +927,11 @@ class Engine {
       this.hls = hls;
       hls.on(HlsLib.Events.ERROR, (_e, d) => {
         if (!d.fatal || my !== this.token) return;
+        if (this.audio === this.eqAudio && this.state.equalizer.enabled && this.state.station) {
+          const position = !this.state.isLive && Number.isFinite(this.eqAudio.currentTime) ? this.eqAudio.currentTime : this.state.station.resumePos;
+          void this.fallbackEqToNative(this.state.station, my, position);
+          return;
+        }
         if (d.type === HlsLib.ErrorTypes.NETWORK_ERROR && this.retries < 3) {
           this.retries++;
           this.logEvent("error", `HLS сеть: ${d.details}`);
@@ -659,8 +950,8 @@ class Engine {
       a.src = url;
       a.load();
     }
-    if (st.kind === "vod" && st.resumePos && st.resumePos > 3) {
-      const pos = st.resumePos;
+    if (st.kind === "vod" && resumePosition && resumePosition > 3) {
+      const pos = resumePosition;
       a.addEventListener("loadedmetadata", () => (a.currentTime = Math.min(pos, (a.duration || pos) - 1)), { once: true });
     }
   }
@@ -676,7 +967,11 @@ class Engine {
     }
     this.wasPlaying = true;
     this.retries = 0;
-    this.set({ status: "playing", error: null });
+    this.set({
+      status: "playing",
+      error: null,
+      ...(this.audio === this.eqAudio && this.state.equalizer.enabled ? { equalizerAvailability: "available" as const } : {}),
+    });
     if (!this.track || this.track.stationId !== st.id) {
       this.track = {
         syncId: uid(),
@@ -720,7 +1015,13 @@ class Engine {
 
   private onError = () => {
     const my = this.token;
-    if (!this.audio.getAttribute("src") || this.hls) return;
+    if (!this.audio.getAttribute("src")) return;
+    if (this.audio === this.eqAudio && this.state.equalizer.enabled && this.state.station) {
+      const position = !this.state.isLive && Number.isFinite(this.eqAudio.currentTime) ? this.eqAudio.currentTime : this.state.station.resumePos;
+      void this.fallbackEqToNative(this.state.station, my, position);
+      return;
+    }
+    if (this.hls) return;
     const code = this.audio.error?.code;
     let msg = "Не удалось воспроизвести поток";
     if (code === 2) msg = "Сетевая ошибка — поток недоступен";
