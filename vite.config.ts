@@ -9,11 +9,28 @@ const radioGardenProxy = {
   rewrite: (path: string) => path.replace(/^\/api\/radio-garden/, "/api"),
 };
 
+function rewriteRadioBrowser(path: string): string {
+  const url = new URL(path, "http://vite.local");
+  const route = url.pathname.replace(/^\/api\/radio-browser\/?/, "");
+  const upstreamRoute: Record<string, string> = {
+    search: "/json/stations/search",
+    tags: "/json/tags",
+    countries: "/json/countries",
+    languages: "/json/languages",
+  };
+  if (route === "click") {
+    const uuid = url.searchParams.get("uuid") ?? "";
+    return /^[0-9a-f-]{20,}$/i.test(uuid) ? `/json/url/${uuid}` : "/json/url/invalid";
+  }
+  const target = upstreamRoute[route];
+  return target ? `${target}${url.search}` : path;
+}
+
 const radioBrowserProxy = {
   target: "https://all.api.radio-browser.info",
   changeOrigin: true,
   secure: true,
-  rewrite: (path: string) => path.replace(/^\/api\/radio-browser/, ""),
+  rewrite: rewriteRadioBrowser,
   headers: { "User-Agent": "PocketRadio/1.0 (radio discovery)" },
 };
 

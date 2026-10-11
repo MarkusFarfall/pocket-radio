@@ -35,7 +35,7 @@ test("station categories are Russian and category filters remain combined with s
   await page.route("**/api/radio-browser/**", async (route) => {
     const url = new URL(route.request().url());
     radioBrowserRequests.push(url);
-    if (url.pathname.endsWith("/json/tags")) {
+    if (url.pathname.endsWith("/tags")) {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -47,15 +47,15 @@ test("station categories are Russian and category filters remain combined with s
       });
       return;
     }
-    if (url.pathname.endsWith("/json/countries")) {
+    if (url.pathname.endsWith("/countries")) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ name: "Germany", iso_3166_1: "DE", stationcount: 30 }]) });
       return;
     }
-    if (url.pathname.endsWith("/json/languages")) {
+    if (url.pathname.endsWith("/languages")) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ name: "english", iso_639: "en", stationcount: 30 }]) });
       return;
     }
-    if (url.pathname.endsWith("/json/stations/search")) {
+    if (url.pathname.endsWith("/search")) {
       stationQueries.push(url);
       const name = url.searchParams.get("name") ?? "";
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(name.toLowerCase().includes("no match") ? [] : [station]) });
@@ -106,7 +106,7 @@ test("Radio Browser network failures show a localized retryable error", async ({
   await page.route("**/api/radio-browser/**", async (route) => {
     const url = new URL(route.request().url());
     requests.push(url);
-    if (url.pathname.endsWith("/json/stations/search")) {
+    if (url.pathname.endsWith("/search")) {
       await route.abort("failed");
       return;
     }
@@ -115,7 +115,7 @@ test("Radio Browser network failures show a localized retryable error", async ({
 
   await openStationSearch(page);
   await expect(page.getByText(/Не удалось связаться с каталогом Radio Browser/)).toBeVisible();
-  expect(requests.some((url) => url.pathname.endsWith("/json/stations/search"))).toBe(true);
+  expect(requests.some((url) => url.pathname.endsWith("/search"))).toBe(true);
   expect(requests.every((url) => url.origin === new URL(page.url()).origin)).toBe(true);
   await expect(page.getByRole("button", { name: "Повторить" })).toBeVisible();
 });

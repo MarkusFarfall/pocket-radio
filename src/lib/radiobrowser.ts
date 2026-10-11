@@ -90,7 +90,7 @@ export async function searchStations(o: SearchOpts): Promise<Found[]> {
   q.set("offset", String(o.offset ?? 0));
   q.set("hidebroken", "true");
   q.set("is_https", "true");
-  const list = await rb<RbStation[]>(`/json/stations/search?${q}`, o.signal);
+  const list = await rb<RbStation[]>(`/search?${q}`, o.signal);
   const seen = new Set<string>();
   const out: Found[] = [];
   for (const s of list) {
@@ -138,7 +138,7 @@ function remember(key: string, data: unknown) {
 export async function loadTags(): Promise<TagInfo[]> {
   const c = cached<TagInfo[]>("rb.tags", 7 * 864e5);
   if (c) return c;
-  const list = await rb<TagInfo[]>("/json/tags?order=stationcount&reverse=true&limit=80&hidebroken=true");
+  const list = await rb<TagInfo[]>("/tags?order=stationcount&reverse=true&limit=80&hidebroken=true");
   const data = list.filter((t) => t.name && t.name.length < 24 && !/^[\d\W]/.test(t.name)).map((t) => ({ name: t.name, stationcount: t.stationcount }));
   remember("rb.tags", data);
   return data;
@@ -177,7 +177,7 @@ export function userRegion(): string {
 export async function loadCountries(): Promise<CountryInfo[]> {
   const c = cached<CountryInfo[]>("rb.countries", 7 * 864e5);
   if (c) return c;
-  const list = await rb<{ name: string; iso_3166_1: string; stationcount: number }[]>("/json/countries?order=stationcount&reverse=true&hidebroken=true");
+  const list = await rb<{ name: string; iso_3166_1: string; stationcount: number }[]>("/countries?order=stationcount&reverse=true&hidebroken=true");
   const data = list
     .filter((x) => x.iso_3166_1 && x.stationcount >= 5)
     .slice(0, 140)
@@ -190,7 +190,7 @@ export async function loadCountries(): Promise<CountryInfo[]> {
 export async function loadLanguages(): Promise<LangInfo[]> {
   const c = cached<LangInfo[]>("rb.langs", 7 * 864e5);
   if (c) return c;
-  const list = await rb<{ name: string; iso_639: string | null; stationcount: number }[]>("/json/languages?order=stationcount&reverse=true&limit=70&hidebroken=true");
+  const list = await rb<{ name: string; iso_639: string | null; stationcount: number }[]>("/languages?order=stationcount&reverse=true&limit=70&hidebroken=true");
   const data = list
     .filter((x) => x.name && x.stationcount >= 15 && !/[#,]/.test(x.name))
     .map((x) => {
@@ -212,7 +212,7 @@ export async function loadLanguages(): Promise<LangInfo[]> {
 export function registerClick(uuid: string) {
   const id = uuid.replace(/^rb-/, "");
   if (!/^[0-9a-f-]{20,}$/i.test(id)) return;
-  fetch(`${RADIO_BROWSER_API}/json/url/${id}`).catch(() => {});
+  fetch(`${RADIO_BROWSER_API}/click?uuid=${encodeURIComponent(id)}`).catch(() => {});
 }
 
 function mapStation(s: RbStation, url: string): Found {

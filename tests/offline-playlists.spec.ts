@@ -589,7 +589,7 @@ test("local and online search modes remain distinct and usable", async ({ page }
   await page.route("**/api/radio-browser/**", async (route) => {
     const url = new URL(route.request().url());
     let data: unknown[] = [];
-    if (url.pathname.includes("/stations/search")) {
+    if (url.pathname.endsWith("/search")) {
       data = [{ stationuuid: "00000000-0000-0000-0000-000000000123", name: "Fixture Jazz Radio", url: "https://example.invalid/radio.mp3", url_resolved: "https://example.invalid/radio.mp3", favicon: "", tags: "jazz,fixture", country: "Germany", countrycode: "DE", state: "Hesse", language: "english", votes: 45, codec: "MP3", bitrate: 128, hls: 0, clickcount: 200 }];
     } else if (url.pathname.includes("/tags")) data = [{ name: "jazz", stationcount: 200 }];
     else if (url.pathname.includes("/countries")) data = [{ name: "Germany", iso_3166_1: "DE", stationcount: 100 }];
