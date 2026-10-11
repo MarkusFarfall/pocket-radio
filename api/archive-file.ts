@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { CDDA_SECTOR_BYTES, MAX_CDDA_TRACK_BYTES } from "../src/lib/cdda";
+
+// Keep this serverless function self-contained; Vercel bundles `api/` separately from the Vite client.
+const CDDA_SECTOR_BYTES = 2_352;
+const MAX_RANGE_BYTES = 144 * 1024 * 1024;
 
 interface VercelRequest extends IncomingMessage {
   query?: { mode?: string | string[]; identifier?: string | string[]; file?: string | string[] };
@@ -11,7 +14,6 @@ interface VercelResponse extends ServerResponse {
 }
 
 const MAX_CUE_BYTES = 512 * 1024;
-const MAX_RANGE_BYTES = MAX_CDDA_TRACK_BYTES;
 
 function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
