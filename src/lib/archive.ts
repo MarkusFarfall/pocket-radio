@@ -649,11 +649,13 @@ const isUsefulImage = (f: FileRow) =>
   (Number(f.size) || 0) > 4_000;
 
 function imageUrl(id: string, files: FileRow[]): string | undefined {
-  const image = files.filter(isUsefulImage).sort((a, b) => {
-    const frontA = /(^|[\/_ .-])(?:cover|front|folder|artwork|album)([\/_ .-]|$)/i.test(a.name) ? 1 : 0;
-    const frontB = /(^|[\/_ .-])(?:cover|front|folder|artwork|album)([\/_ .-]|$)/i.test(b.name) ? 1 : 0;
-    return frontB - frontA || (Number(b.size) || 0) - (Number(a.size) || 0);
-  })[0];
+  // Не берём произвольные JPG из Archive: среди них часто оказываются waveform/item thumbnails.
+  // Только явно названный front cover считается обложкой; иначе albumTracks попробует каталог Apple,
+  // а при отсутствии уверенного совпадения UI покажет нейтральную музыкальную иконку.
+  const hasFrontName = (name: string) => /(^|[\/_ .-])(?:cover|front|folder|artwork|album)([\/_ .-]|$)/i.test(name);
+  const image = files.filter((file) => isUsefulImage(file) && hasFrontName(file.name)).sort((a, b) =>
+    (Number(b.size) || 0) - (Number(a.size) || 0)
+  )[0];
   return image ? `${BASE}/download/${encodeURIComponent(id)}/${image.name.split("/").map(encodeURIComponent).join("/")}` : undefined;
 }
 

@@ -88,6 +88,8 @@ test("CD track URLs keep their byte source, byte order, and validated sector bou
 test("ready-made browser-supported Archive audio formats are kept and duplicate encodings are de-duplicated", async ({ page }) => {
   const files = [
     { name: "cover.jpg", format: "JPEG", size: "5000" },
+    { name: "random-preview.jpg", format: "JPEG", size: "900000" },
+    { name: "waveform.jpg", format: "JPEG", size: "1200000" },
     { name: "01-track.mp3", format: "MP3", track: "1", title: "Song in MP3", size: "1000" },
     { name: "01-track.m4a", format: "MPEG4 Audio", track: "1", title: "Duplicate AAC version", size: "1200" },
     { name: "02-track.ogg", format: "Ogg Vorbis", track: "2", title: "Ogg track", size: "1300" },
@@ -110,11 +112,12 @@ test("ready-made browser-supported Archive audio formats are kept and duplicate 
   const tracks = await page.evaluate(async () => {
     const { albumTracks } = await import("/src/lib/archive.ts");
     const result = await albumTracks("format-fixture");
-    return result.tracks.map((track) => ({ title: track.title, file: new URL(track.url).pathname.split("/").at(-1) }));
+    return result.tracks.map((track) => ({ title: track.title, file: new URL(track.url).pathname.split("/").at(-1), logo: track.logo }));
   });
 
   expect(tracks.map((track) => track.title)).toEqual(["Song in MP3", "Ogg track", "Opus track", "FLAC track", "WAV track", "Bonus track"]);
   expect(tracks.map((track) => track.file)).toEqual(["01-track.mp3", "02-track.ogg", "03-track.opus", "04-track.flac", "05-track.wav", "07-bonus.mp3"]);
+  expect(tracks.every((track) => track.logo === "https://archive.org/download/format-fixture/cover.jpg")).toBe(true);
   expect(tracks.some((track) => track.title.includes("Duplicate"))).toBe(false);
   expect(tracks.some((track) => track.title.includes("Unsupported"))).toBe(false);
 });

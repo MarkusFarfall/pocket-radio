@@ -12,6 +12,7 @@ import { isLanUrl, uid } from "./templates";
 import { toast } from "./toast";
 import type { FallbackInfo, Playlist, PlaylistFollow, PlaylistItem, Station } from "./types";
 import { snapshotImage } from "./images";
+import { isPlaceholderArtwork } from "./artwork";
 import { fixText } from "./text";
 
 /**
@@ -24,6 +25,10 @@ const PL = "pl:";
 const PP = "pp:";
 const coverMigrations = new Set<string>();
 
+function usableArtwork(value?: string | null): string | undefined {
+  return value && /^(https:\/\/|data:image\/)/i.test(value) && !isPlaceholderArtwork(value) ? value : undefined;
+}
+
 export const localUrl = (itemId: string) => `https://local.pocket-radio.invalid/${encodeURIComponent(itemId)}`;
 
 /* ------------------------------------ хранилище ------------------------------------ */
@@ -31,8 +36,7 @@ export const localUrl = (itemId: string) => `https://local.pocket-radio.invalid/
 async function loadAll(): Promise<Playlist[]> {
   const rows = await db.settings.where(":id").startsWith(PL).toArray();
   const lists = rows
-    .map((r) => r.value as Playlist)
-    .map((p) => ({ ...p, name: fixText(p.name), desc: fixText(p.desc), cover: p.cover || p.follow?.art || p.items?.find((i) => i.logo)?.logo, items: dedupe(p.items ?? []) }))
+    .map((r) => normalizePlaylist(r.value as Playlist))
     .sort((a, b) => b.updatedAt - a.updatedAt);
   // Старые плейлисты получают одну главную обложку с первого трека и пытаются сохранить её локально.
   for (const p of lists) {
@@ -66,14 +70,14 @@ export function usePlaylists(): Playlist[] | undefined {
 
 export async function getPlaylist(id: string): Promise<Playlist | undefined> {
   const r = await db.settings.get(PL + id);
-  return r ? (r.value as Playlist) : undefined;
+  return r ? normalizePlaylist(r.value as Playlist) : undefined;
 }
 
 const save = (p: Playlist) => setSetting(PL + p.id, p);
 
 /** Сохраняет сетевую обложку в playlist data, но не перезаписывает выбор пользователя. */
 function snapshotPlaylistCover(id: string, source: string): void {
-  if (!source || source.startsWith("data:")) return;
+  if (!source || source.startsWith("data:") || isPlaceholderArtwork(source)) return;
   void snapshotImage(source)
     .then(async (cover) => {
       if (cover === source) return;
@@ -96,25 +100,67 @@ async function mutate(id: string, fn: (p: Playlist) => void): Promise<void> {
 function dedupe(items: PlaylistItem[]): PlaylistItem[] {
   const seen = new Set<string>();
   return items
-    .map((i) => ({ ...i, title: fixText(i.title), subtitle: fixText(i.subtitle) || undefined, note: fixText(i.note) || undefined }))
+    .map((i) => ({
+      ...i,
+      title: fixText(i.title),
+      subtitle: fixText(i.subtitle) || undefined,
+      note: fixText(i.note) || undefined,
+      genre: fixText(i.genre) || undefined,
+      logo: usableArtwork(i.logo),
+    }))
     .filter((i) => !seen.has(i.id) && !!seen.add(i.id));
+}
+
+function normalizeFollow(follow?: PlaylistFollow): PlaylistFollow | undefined {
+  if (!follow) return undefined;
+  return {
+    ...follow,
+    name: fixText(follow.name),
+    artist: fixText(follow.artist),
+    genre: fixText(follow.genre),
+    art: usableArtwork(follow.art) ?? "",
+  };
+}
+
+function normalizePlaylist(playlist: Playlist): Playlist {
+  const items = dedupe(playlist.items ?? []);
+  const follow = normalizeFollow(playlist.follow);
+  return {
+    ...playlist,
+    name: fixText(playlist.name),
+    desc: fixText(playlist.desc),
+    cover: usableArtwork(playlist.cover) || usableArtwork(follow?.art) || items.find((item) => item.logo)?.logo,
+    items,
+    follow,
+  };
 }
 
 export async function createPlaylist(name: string, items: PlaylistItem[] = [], extra: { desc?: string; follow?: PlaylistFollow; cover?: string } = {}): Promise<Playlist> {
   const now = Date.now();
-  const candidate = extra.cover || extra.follow?.art || items.find((i) => i.logo)?.logo;
-  const p: Playlist = { id: uid(), name: name.trim().slice(0, 80) || "Новый плейлист", desc: (extra.desc ?? "").trim(), cover: candidate, items: dedupe(items), follow: extra.follow, createdAt: now, updatedAt: now };
+  const normalizedItems = dedupe(items);
+  const candidate = usableArtwork(extra.cover) || usableArtwork(extra.follow?.art) || normalizedItems.find((item) => item.logo)?.logo;
+  const follow = normalizeFollow(extra.follow);
+  const p: Playlist = {
+    id: uid(),
+    name: fixText(name).trim().slice(0, 80) || "Новый плейлист",
+    desc: fixText(extra.desc).trim(),
+    cover: candidate,
+    items: normalizedItems,
+    follow,
+    createdAt: now,
+    updatedAt: now,
+  };
   await save(p);
-  // Берём одну обложку альбома/подписки/первого трека и сразу пытаемся сохранить её внутри плейлиста.
+  // Автоматически используем только реальную обложку из доверенного источника; подозрительные thumbs пропускаются.
   if (candidate) snapshotPlaylistCover(p.id, candidate);
   return p;
 }
 
 export async function updatePlaylist(id: string, patch: { name?: string; desc?: string; cover?: string | null }): Promise<void> {
   await mutate(id, (p) => {
-    if (patch.name !== undefined) p.name = patch.name.trim().slice(0, 80) || p.name;
-    if (patch.desc !== undefined) p.desc = patch.desc.trim();
-    if (patch.cover !== undefined) p.cover = patch.cover || undefined;
+    if (patch.name !== undefined) p.name = fixText(patch.name).trim().slice(0, 80) || p.name;
+    if (patch.desc !== undefined) p.desc = fixText(patch.desc).trim();
+    if (patch.cover !== undefined) p.cover = usableArtwork(patch.cover);
   });
 }
 

@@ -83,6 +83,9 @@ function badness(s: string): number {
   let n = 0;
   n += (s.match(/[�□]/g) ?? []).length * 12;
   n += (s.match(/[ÃÂÐÑ]/g) ?? []).length * 4;
+  // CP1251 bytes decoded as Latin-1 often become runs like «Íàóòèëóñ»,
+  // which have no UTF-8 replacement characters or the usual «Ð/Ñ» markers.
+  n += (s.match(/[\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u00ff]{3,}/g) ?? []).reduce((sum, run) => sum + run.length * 2, 0);
   n += (s.match(/[РС][А-Яа-яЁё]/g) ?? []).length * 3;
   n += (s.match(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g) ?? []).length * 8;
   // Чередование «А + квадратик/мусор» тоже характерно для сломанного UTF.

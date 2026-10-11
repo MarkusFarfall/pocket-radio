@@ -110,8 +110,8 @@ const RULES: [RegExp, string][] = [
 export function glyphKey(s: GlyphSource): string {
   if (s.icon?.startsWith("g:") && GLYPHS[s.icon.slice(2)]) return s.icon.slice(2);
   if (s.kind === "lan") return "home";
-  if (s.kind === "vod") return "podcast";
   const text = `${s.genre ?? ""} ${(s.tags ?? []).join(" ")} ${s.name ?? ""}`.toLowerCase();
+  if (s.kind === "vod") return /музык|music|soundtrack|альбом|album/i.test(text) ? "music" : "podcast";
   for (const [re, key] of RULES) if (re.test(text)) return key;
   return "radio";
 }

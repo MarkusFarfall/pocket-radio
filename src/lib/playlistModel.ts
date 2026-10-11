@@ -1,5 +1,7 @@
 import { db, draftToStation } from "./db";
 import type { PlaylistItem, Station } from "./types";
+import { fixText } from "./text";
+import { isPlaceholderArtwork } from "./artwork";
 
 const PP = "pp:";
 
@@ -20,15 +22,15 @@ export async function loadProgress(itemIds: string[]): Promise<Map<string, numbe
 export function itemToStation(item: PlaylistItem, position?: number): Station {
   const station = draftToStation({
     id: itemStationId(item.id),
-    name: item.title,
+    name: fixText(item.title) || "Без названия",
     url: item.url,
     kind: item.kind,
-    genre: item.genre ?? (item.kind === "vod" ? "Музыка" : ""),
-    city: item.subtitle ?? "",
+    genre: fixText(item.genre ?? (item.kind === "vod" ? "Музыка" : "")),
+    city: fixText(item.subtitle ?? ""),
     tags: [],
     icon: "",
-    note: item.note ?? "",
-    logo: item.logo,
+    note: fixText(item.note ?? ""),
+    logo: isPlaceholderArtwork(item.logo) ? undefined : item.logo,
   });
   if (position) station.resumePos = position;
   return station;

@@ -4,6 +4,7 @@ import { uid } from "./templates";
 import { toast } from "./toast";
 import type { PlaylistItem } from "./types";
 import { putOfflineBlob } from "./offline";
+import { fixText } from "./text";
 
 /** Свои песни с устройства: кладём файл во встроенное офлайн-хранилище, чтобы играл без интернета. */
 
@@ -60,8 +61,8 @@ export async function addLocalFiles(files: File[]): Promise<{ items: PlaylistIte
       await putOfflineBlob(itemStationId(id), localUrl(id), file, file.type || MIME[ext] || "audio/mpeg", file.size);
       items.push({
         id,
-        title: tags.title || nameToTitle(file.name) || "Без названия",
-        subtitle: tags.artist || tags.album || undefined,
+        title: fixText(tags.title || nameToTitle(file.name)) || "Без названия",
+        subtitle: fixText(tags.artist || tags.album) || undefined,
         url: localUrl(id),
         kind: "vod",
         genre: "Музыка",

@@ -201,29 +201,90 @@ test("repairs CP1251 mojibake in Archive track titles before playback", async ({
   await expect(page.getByRole("dialog").last().getByRole("button", { name: new RegExp(secondTitle) })).toBeVisible();
 });
 
-test("repairs a mojibake title already stored in an offline playlist", async ({ page }) => {
-  const title = "Романс - Первая любовь";
+test("repairs a plain Latin-1 CP1251 title in an offline playlist and its restored player", async ({ page }) => {
+  const title = "Наутилус Помпилиус";
   await openAsGuest(page);
   await page.evaluate(async (rawTitle) => {
     const { db } = await import("/src/lib/db.ts");
-    await db.settings.put({
-      key: "pl:legacy-title-fixture",
-      value: {
-        id: "legacy-title-fixture",
-        name: "Legacy Archive songs",
-        desc: "",
-        items: [{ id: "legacy-title-track", title: rawTitle, url: "https://archive.org/download/legacy-title-fixture/track.mp3", kind: "vod", addedAt: 1 }],
-        createdAt: 1,
-        updatedAt: 1,
+    await db.settings.bulkPut([
+      {
+        key: "pl:legacy-title-fixture",
+        value: {
+          id: "legacy-title-fixture",
+          name: "Legacy Archive songs",
+          desc: "",
+          items: [{ id: "legacy-title-track", title: rawTitle, url: "https://archive.org/download/legacy-title-fixture/track.mp3", kind: "vod", genre: "Музыка", addedAt: 1 }],
+          createdAt: 1,
+          updatedAt: 1,
+        },
       },
-    });
-  }, "Ðîìàíñ - Ïåðâàÿ ëþáîâü");
+      { key: "lastStationId", value: "pli:legacy-title-track" },
+      { key: "lastQueue", value: ["pli:legacy-title-track"] },
+      { key: "lastSourcePlaylistId", value: "legacy-title-fixture" },
+    ]);
+  }, "Íàóòèëóñ Ïîìïèëèóñ");
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: /Открыть плеер/ })).toBeVisible();
+  await page.getByRole("button", { name: /Открыть плеер/ }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.getByRole("button", { name: "Свернуть плеер" }).click();
 
   await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
   const legacyPlaylist = page.getByRole("button", { name: 'Открыть «Legacy Archive songs»' });
   await expect(legacyPlaylist).toBeVisible();
   await legacyPlaylist.click();
   await expect(page.getByRole("button", { name: `Включить «${title}»` })).toBeVisible();
+});
+
+test("archive audio thumbnails never become default covers in the player or playlist", async ({ page }) => {
+  const thumbnail = "https://archive.org/services/img/waveform-cover-fixture";
+  const waveformCover = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64"><rect width="64" height="64" fill="#000"/><path fill="#f4dfd5" d="M0 28L2 22 4 30 6 17 8 26 10 20 12 29 14 15 16 24 18 18 20 28 22 20 24 30 26 18 28 27 30 16 32 25 34 19 36 29 38 18 40 27 42 15 44 25 46 19 48 28 50 17 52 26 54 18 56 30 58 19 60 27 62 16 64 26 64 39 62 48 60 38 58 46 56 40 54 50 52 39 50 47 48 38 46 49 44 40 42 47 40 38 38 49 36 39 34 48 32 38 30 50 28 40 26 48 24 39 22 48 20 38 18 50 16 39 14 48 12 38 10 49 8 39 6 48 4 38 2 46 0 38Z"/></svg>')}`;
+  await openAsGuest(page);
+  const waveformDetected = await page.evaluate(async (src) => {
+    const { isGeneratedWaveformCover } = await import("/src/lib/artwork.ts");
+    const image = new Image();
+    image.src = src;
+    await image.decode();
+    return isGeneratedWaveformCover(image);
+  }, waveformCover);
+  expect(waveformDetected).toBe(true);
+  await page.evaluate(async ({ logo, legacyLogo }) => {
+    const { db } = await import("/src/lib/db.ts");
+    await db.settings.bulkPut([
+      {
+        key: "pl:waveform-cover-fixture",
+        value: {
+          id: "waveform-cover-fixture",
+          name: "Waveform cover fixture",
+          desc: "",
+          cover: logo,
+          items: [
+            { id: "waveform-current", title: "Track without real art", url: "https://archive.org/download/waveform-cover-fixture/current.mp3", kind: "vod", genre: "Музыка", logo, addedAt: 1 },
+            { id: "waveform-next", title: "Next track", url: "https://archive.org/download/waveform-cover-fixture/next.mp3", kind: "vod", genre: "Музыка", logo: legacyLogo, addedAt: 2 },
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      { key: "lastStationId", value: "pli:waveform-current" },
+      { key: "lastQueue", value: ["pli:waveform-current", "pli:waveform-next"] },
+      { key: "lastSourcePlaylistId", value: "waveform-cover-fixture" },
+    ]);
+  }, { logo: waveformCover, legacyLogo: thumbnail });
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: /Открыть плеер/ })).toBeVisible();
+  await page.getByRole("button", { name: /Открыть плеер/ }).click();
+  await expect(page.getByRole("heading", { name: "Track without real art" })).toBeVisible();
+  await expect(page.locator(".player-art-wrap .cover img")).toHaveCount(0);
+  await expect(page.locator(".player-more .cover img")).toHaveCount(0);
+  await page.getByRole("button", { name: "Свернуть плеер" }).click();
+
+  await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
+  const playlist = page.getByRole("button", { name: "Открыть «Waveform cover fixture»" });
+  await expect(playlist).toBeVisible();
+  await expect(playlist.locator(".cover img")).toHaveCount(0);
 });
 
 test("FullPlayer returns to an unsaved album track list", async ({ page }) => {

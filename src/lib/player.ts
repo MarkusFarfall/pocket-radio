@@ -9,7 +9,7 @@ import { cachedBlobUrl } from "./offline";
 import { fetchCddaWav, parseCddaTrackUrl } from "./cdda";
 import { connectivity } from "./connectivity";
 import { isLanUrl, mixedContentRisk, uid } from "./templates";
-import { artworkFor } from "./artwork";
+import { isPlaceholderArtwork } from "./artwork";
 import { toast } from "./toast";
 import {
   applyEqualizerGraph,
@@ -1320,12 +1320,14 @@ class Engine {
     const { station: st, meta, status } = this.state;
     if (!st) return;
     try {
-      const art = st.logo && /^(https:\/\/|data:image\/)/i.test(st.logo) ? st.logo : artworkFor(st.name, st.icon);
+      const legacyInlineTrackArt = st.id.startsWith("pli:") && /^data:image\//i.test(st.logo ?? "");
+      const art = st.logo && /^(https:\/\/|data:image\/)/i.test(st.logo) && !isPlaceholderArtwork(st.logo) && !legacyInlineTrackArt ? st.logo : undefined;
+      const type = art && (/^data:image\/jpe?g/i.test(art) || /\.jpe?g(?:[?#]|$)/i.test(art)) ? "image/jpeg" : undefined;
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: meta?.title || st.name,
-        artist: meta?.title ? meta.artist || st.name : st.city || st.genre || "Pocket Radio",
-        album: meta?.title ? st.name : "Pocket Radio",
-        artwork: [{ src: art, sizes: "512x512", type: art.startsWith("data:image/jpeg") ? "image/jpeg" : "image/png" }],
+        title: fixText(meta?.title || st.name),
+        artist: fixText(meta?.title ? meta.artist || st.name : st.city || st.genre || "Pocket Radio"),
+        album: fixText(meta?.title ? st.name : "Pocket Radio"),
+        ...(art ? { artwork: [{ src: art, sizes: "512x512", ...(type ? { type } : {}) }] } : {}),
       });
       navigator.mediaSession.playbackState = status === "playing" || status === "buffering" ? "playing" : "paused";
     } catch {
