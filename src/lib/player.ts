@@ -6,6 +6,7 @@ import type { FallbackInfo, Playlist, Session, Station } from "./types";
 import { ambient } from "./ambient";
 import { fixText } from "./text";
 import { cachedBlobUrl } from "./offline";
+import { fetchCddaWav, parseCddaTrackUrl } from "./cdda";
 import { connectivity } from "./connectivity";
 import { isLanUrl, mixedContentRisk, uid } from "./templates";
 import { artworkFor } from "./artwork";
@@ -30,6 +31,7 @@ export interface TrackEntry {
   ts: number;
   stationId: string;
   stationName: string;
+  logo?: string;
 }
 
 export interface PlayerState {
@@ -96,6 +98,7 @@ class Engine {
   private track: Track | null = null;
   private chain: Promise<unknown> = Promise.resolve();
   private blobUrl: string | null = null;
+  private loadAbort: AbortController | null = null;
   private metaTimer: number | null = null;
   private sleepTimer: number | null = null;
   private lastResumeSave = 0;
@@ -570,6 +573,8 @@ class Engine {
 
   /* ------------------------------- источник ------------------------------- */
   private teardownSource() {
+    this.loadAbort?.abort();
+    this.loadAbort = null;
     if (this.metaTimer) clearInterval(this.metaTimer);
     this.metaTimer = null;
     if (this.hls) {
@@ -595,6 +600,17 @@ class Engine {
         this.blobUrl = blob;
         url = blob;
         this.set({ fromCache: true });
+      } else if (parseCddaTrackUrl(st.url)) {
+        const controller = new AbortController();
+        this.loadAbort = controller;
+        try {
+          const wav = await fetchCddaWav(st.url, controller.signal);
+          if (my !== this.token) return;
+          this.blobUrl = URL.createObjectURL(wav);
+          url = this.blobUrl;
+        } finally {
+          if (this.loadAbort === controller) this.loadAbort = null;
+        }
       }
     }
     if (st.kind === "shoutcast") {
@@ -869,7 +885,7 @@ class Engine {
           const artist = fixText(meta.artist);
           const cleanMeta = title ? { title, artist: artist || undefined } : null;
           const history = title
-            ? [{ title, artist: artist || undefined, ts: Date.now(), stationId: st.id, stationName: st.name }, ...this.state.history].slice(0, 30)
+            ? [{ title, artist: artist || undefined, ts: Date.now(), stationId: st.id, stationName: st.name, logo: st.logo }, ...this.state.history].slice(0, 30)
             : this.state.history;
           this.set({ meta: cleanMeta, history });
           this.updateMediaSession();

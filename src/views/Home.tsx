@@ -109,6 +109,7 @@ function SavedTracks() {
       <div className="divide-y divide-line rounded-2xl border border-line bg-surface">
         {list.map((t) => (
           <div key={t.id} className="flex items-center gap-3 px-4 py-3">
+            <Cover s={{ name: t.title, logo: t.logo, kind: "vod", genre: "Музыка", icon: "g:music" }} size={46} className="rounded-lg" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-[15px] font-semibold">{t.title}</div>
               <div className="truncate text-xs text-muted">

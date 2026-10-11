@@ -32,14 +32,14 @@ const QUICK_OFFLINE_SEARCHES = {
   ],
 };
 
-function AlbumCover({ album, size }: { album: Pick<Album, "title" | "thumb" | "cover">; size: number }) {
+function AlbumCover({ album, size }: { album: Pick<Album, "title" | "cover">; size: number }) {
   return <Cover s={{ name: album.title, logo: album.cover, kind: "vod", genre: "Музыка", icon: "g:music" }} size={size} className="rounded-lg" eager fit="cover" />;
 }
 
 /** Строка результата сама выясняет, это один трек или настоящий сборник. */
 function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
-  const [info, setInfo] = useState<{ count: number; cover?: string } | null>(album.trackCount !== undefined ? { count: album.trackCount, cover: album.cover } : null);
+  const [info, setInfo] = useState<{ count: number; cover?: string; source?: "files" | "cd-image" } | null>(album.trackCount !== undefined ? { count: album.trackCount, cover: album.cover } : null);
 
   useEffect(() => {
     if (info !== null) return;
@@ -65,7 +65,7 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
 
   return (
     <button ref={ref} onClick={onOpen} className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2">
-      <AlbumCover album={{ ...album, cover: info?.cover }} size={48} />
+      <AlbumCover album={{ ...album, cover: info?.cover || album.cover }} size={48} />
       <span className="min-w-0 flex-1">
         <span className="line-clamp-2 text-[15px] font-semibold leading-snug">{album.title}</span>
         <span className="block truncate text-xs text-muted">
@@ -78,6 +78,10 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
         {info === null ? (
           <span className="inline-flex items-center gap-1 text-xs text-muted">
             <Loader2 size={12} className="animate-spin" /> <span className="hidden sm:inline">Смотрим состав</span>
+          </span>
+        ) : info.source === "cd-image" && info.count > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
+            <Disc3 size={12} /> <span className="hidden sm:inline">CD-образ · {info.count}</span><span className="sm:hidden">CD · {info.count}</span>
           </span>
         ) : info.count <= 1 ? (
           <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-xs font-semibold text-muted">
@@ -159,7 +163,7 @@ function CollectionCard({ c, onClick }: { c: (typeof COLLECTIONS)[number]; onCli
 
 function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => void; onPlay: ViewProps["onPlay"] }) {
   const p = usePlayer();
-  const [data, setData] = useState<{ title: string; creator: string; cover?: string; tracks: PlaylistItem[] } | null>(null);
+  const [data, setData] = useState<{ title: string; creator: string; cover?: string; source: "files" | "cd-image"; tracks: PlaylistItem[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [selecting, setSelecting] = useState(false);
@@ -170,12 +174,12 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
     const c = new AbortController();
     setData(null);
     setErr(null);
-    albumTracks(album.id, c.signal)
+    albumTracks(album.id, c.signal, album)
       .then((d) => {
         if (c.signal.aborted) return;
         setData(d);
         setSel(new Set());
-        if (!d.tracks.length) setErr("В этом сборнике нет аудиофайлов, которые можно воспроизвести.");
+        if (!d.tracks.length) setErr("Не нашёл поддерживаемых аудиофайлов или разметки .cue для CD-образа.");
       })
       .catch((e) => !c.signal.aborted && setErr(e instanceof Error ? e.message : "Не удалось загрузить сборник"));
     return () => c.abort();
@@ -255,7 +259,7 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
           <span className="h-10 w-10" />
         </div>
         <div className="relative mx-auto mt-4 aspect-square w-[min(48vw,180px)] md:ml-0 md:mr-0 md:w-48">
-          <Cover s={{ name: data?.title || album.title, logo: data ? data.cover : album.thumb, kind: "vod", icon: "g:music" }} size="fill" className="rounded-2xl shadow-2xl" eager fit="cover" />
+          <Cover s={{ name: data?.title || album.title, logo: data?.cover || album.cover, kind: "vod", icon: "g:music" }} size="fill" className="rounded-2xl shadow-2xl" eager fit="cover" />
         </div>
         <div className="relative mt-5 md:absolute md:bottom-7 md:left-[15rem] md:right-8 md:mt-0">
           <h2 className="line-clamp-2 font-display text-2xl font-bold leading-[1.1] tracking-tight md:text-3xl">{data?.title ?? album.title}</h2>
@@ -279,6 +283,11 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
           </div>}
         </div>
       </section>
+
+      {data?.source === "cd-image" && <div className="mx-4 mt-3 flex items-start gap-2 rounded-xl bg-accent/8 p-3 text-xs leading-relaxed text-muted">
+        <Disc3 size={16} className="mt-0.5 shrink-0 text-accent" />
+        <span>Этот релиз хранится как аудио CD-образ. Читаю только дорожки, отмеченные в .cue как AUDIO, и запрашиваю нужный фрагмент — весь образ скачивать не нужно. Дополнительная CD+G-графика не отображается.</span>
+      </div>}
 
       {selecting && tracks.length > 0 && <div className="sticky top-0 z-[9] flex items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-2.5 text-sm backdrop-blur-xl">
         <button className="font-semibold text-accent" onClick={() => setSel(allOn ? new Set() : new Set(tracks.map((t) => t.id)))}>{allOn ? "Снять всё" : "Выбрать всё"}</button>

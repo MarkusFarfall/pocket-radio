@@ -284,11 +284,15 @@ export async function clearHistory() {
 /* ------------------------------- треки ------------------------------- */
 
 export async function saveTrack(t: Omit<SavedTrack, "id" | "ts">): Promise<boolean> {
+  const logo = t.logo && /^(https:\/\/|data:image\/)/i.test(t.logo) ? t.logo : undefined;
   const dup = await db.tracks
     .filter((x) => x.title === t.title && (x.artist ?? "") === (t.artist ?? ""))
     .first();
-  if (dup) return false;
-  await db.tracks.add({ ...t, ts: Date.now() });
+  if (dup) {
+    if (!dup.logo && logo && dup.id !== undefined) await db.tracks.update(dup.id, { logo });
+    return false;
+  }
+  await db.tracks.add({ ...t, logo, ts: Date.now() });
   return true;
 }
 
@@ -655,7 +659,7 @@ export async function importJSON(text: string, options: ImportJSONOptions = {}):
     for (const value of data.tracks) {
       if (!isRecord(value) || typeof value.title !== "string") continue;
       const stationId = typeof value.stationId === "string" ? (idMap.get(value.stationId) ?? value.stationId) : "";
-      if (await saveTrack({ title: value.title, artist: typeof value.artist === "string" ? value.artist : undefined, station: typeof value.station === "string" ? value.station : "", stationId })) tracks++;
+      if (await saveTrack({ title: value.title, artist: typeof value.artist === "string" ? value.artist : undefined, station: typeof value.station === "string" ? value.station : "", stationId, logo: typeof value.logo === "string" ? value.logo : undefined })) tracks++;
     }
   }
 

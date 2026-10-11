@@ -175,7 +175,7 @@ export function NowPanel({ stations, onEdit, onQr }: { stations: Station[]; onEd
                         </div>
                       </div>
                       <button
-                        onClick={async () => toast((await saveTrack({ title: t.title, artist: t.artist, station: t.stationName, stationId: t.stationId })) ? "Трек сохранён" : "Уже в сохранённых", "ok")}
+                        onClick={async () => toast((await saveTrack({ title: t.title, artist: t.artist, station: t.stationName, stationId: t.stationId, logo: t.logo })) ? "Трек сохранён" : "Уже в сохранённых", "ok")}
                         className="rounded-lg p-2 text-muted transition hover:text-accent"
                         aria-label="Сохранить трек"
                       >

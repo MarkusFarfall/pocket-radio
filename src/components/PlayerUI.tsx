@@ -502,7 +502,7 @@ function TrackHistory({ st }: { st: Station }) {
                 </div>
               </div>
               <button
-                onClick={async () => toast((await saveTrack({ title: t.title, artist: t.artist, station: t.stationName, stationId: t.stationId })) ? "Трек сохранён" : "Уже в сохранённых", "ok")}
+                onClick={async () => toast((await saveTrack({ title: t.title, artist: t.artist, station: t.stationName, stationId: t.stationId, logo: t.logo })) ? "Трек сохранён" : "Уже в сохранённых", "ok")}
                 className="rounded-lg p-2 text-muted hover:text-accent"
                 aria-label="Сохранить трек"
               >
@@ -722,7 +722,7 @@ export function FullPlayer({
                 {p.meta?.title && !p.fallback && (
                   <button
                     onClick={async () =>
-                      toast((await saveTrack({ title: p.meta!.title!, artist: p.meta!.artist, station: st.name, stationId: st.id })) ? "Трек сохранён в «Главной»" : "Этот трек уже сохранён", "ok")
+                      toast((await saveTrack({ title: p.meta!.title!, artist: p.meta!.artist, station: st.name, stationId: st.id, logo: st.logo })) ? "Трек сохранён в «Главной»" : "Этот трек уже сохранён", "ok")
                     }
                     className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-surface-2/90 px-3.5 py-1.5 text-xs font-semibold transition hover:brightness-95"
                   >

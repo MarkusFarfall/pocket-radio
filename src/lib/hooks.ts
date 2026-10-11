@@ -29,7 +29,43 @@ export function useOfflineItems(): OfflineItem[] {
   return useLiveQuery(() => db.offline.toArray(), []) ?? [];
 }
 export function useSavedTracks(): SavedTrack[] {
-  return useLiveQuery(async () => (await db.tracks.orderBy("ts").reverse().toArray()).map((t) => ({ ...t, title: fixText(t.title), artist: fixText(t.artist) || undefined, station: fixText(t.station) })), []) ?? [];
+  return useLiveQuery(async () => {
+    const tracks = await db.tracks.orderBy("ts").reverse().toArray();
+    if (!tracks.length) return [];
+    const ids = [...new Set(tracks.filter((track) => !track.logo).map((track) => track.stationId).filter(Boolean))];
+    if (!ids.length) return tracks.map((track) => ({ ...track, title: fixText(track.title), artist: fixText(track.artist) || undefined, station: fixText(track.station) }));
+
+    const [stations, sessions, playlists] = await Promise.all([
+      db.stations.bulkGet(ids),
+      db.sessions.where("stationId").anyOf(ids).toArray(),
+      db.settings.where(":id").startsWith("pl:").toArray(),
+    ]);
+    const stationLogos = new Map<string, string>();
+    stations.forEach((station, index) => {
+      if (station?.logo) stationLogos.set(ids[index], station.logo);
+    });
+
+    const playlistLogos = new Map<string, string>();
+    for (const row of playlists) {
+      const value = row.value as { items?: { id?: string; logo?: string }[] };
+      for (const item of value?.items ?? []) {
+        if (typeof item?.id === "string" && item.logo) playlistLogos.set(`pli:${item.id}`, item.logo);
+      }
+    }
+
+    const sessionLogos = new Map<string, string>();
+    for (const session of sessions.sort((a, b) => b.endedAt - a.endedAt)) {
+      if (session.stationLogo && !sessionLogos.has(session.stationId)) sessionLogos.set(session.stationId, session.stationLogo);
+    }
+
+    return tracks.map((track) => ({
+      ...track,
+      title: fixText(track.title),
+      artist: fixText(track.artist) || undefined,
+      station: fixText(track.station),
+      logo: track.logo || stationLogos.get(track.stationId) || playlistLogos.get(track.stationId) || sessionLogos.get(track.stationId),
+    }));
+  }, []) ?? [];
 }
 /** Станция из каталога по id: undefined — ещё грузится, null — в каталоге её нет (предпросмотр). */
 export function useSavedStation(st: { id: string; url: string } | null | undefined): Station | null | undefined {

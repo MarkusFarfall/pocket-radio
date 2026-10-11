@@ -1,4 +1,6 @@
 import type { PlaylistItem } from "./types";
+import { lookupArchiveAlbumBriefly } from "./albumArt";
+import { CDDA_SECTOR_BYTES, CDDA_SECTORS_PER_SECOND, makeCddaTrackUrl, parseCueSheet, type CueAudioTrack } from "./cdda";
 import { fixText } from "./text";
 
 /**
@@ -15,7 +17,6 @@ export interface Album {
   creator: string;
   year: string;
   downloads: number;
-  thumb: string;
   /** Why a free-text search returned this item; preset collections leave it unset. */
   match?: AlbumSearchMatch;
   /** Заполняется после быстрой проверки metadata: 1 = одиночная запись, >1 = сборник. */
@@ -216,7 +217,6 @@ function toAlbum(d: Doc, match?: AlbumSearchMatch): Album {
     creator: fixText(one(d.creator)),
     year: d.year ? String(d.year) : "",
     downloads: Number(d.downloads) || 0,
-    thumb: `${BASE}/services/img/${encodeURIComponent(d.identifier)}`,
     ...(match ? { match } : {}),
   };
 }
@@ -466,10 +466,56 @@ interface MetaData {
 
 const metaCache = new Map<string, Promise<MetaData>>();
 
+interface AudioFormat {
+  mime: string;
+  priority: number;
+}
+
+function audioFormat(file: FileRow): AudioFormat | null {
+  const name = file.name.toLowerCase();
+  const format = (file.format ?? "").toLowerCase();
+  if (/\.(?:mp3|mp2)$/i.test(name) || /\b(?:mp3|mpeg(?: layer)? audio)\b/i.test(format)) return { mime: "audio/mpeg", priority: 0 };
+  if (/\.(?:m4a|mp4)$/i.test(name) || /\b(?:m4a|mpeg-?4 audio|aac audio)\b/i.test(format)) return { mime: "audio/mp4", priority: 1 };
+  if (/\.aac$/i.test(name) || /\b(?:aac|advanced audio coding)\b/i.test(format)) return { mime: "audio/aac", priority: 2 };
+  if (/\.(?:ogg|oga)$/i.test(name) || /\b(?:ogg|vorbis|opus)\b/i.test(format)) return { mime: /opus/i.test(`${name} ${format}`) ? 'audio/ogg; codecs="opus"' : "audio/ogg", priority: 3 };
+  if (/\.opus$/i.test(name)) return { mime: 'audio/ogg; codecs="opus"', priority: 3 };
+  if (/\.flac$/i.test(name) || /\bflac\b/i.test(format)) return { mime: "audio/flac", priority: 4 };
+  if (/\.(?:wav|wave)$/i.test(name) || /\b(?:wave|wav)\b/i.test(format)) return { mime: "audio/wav", priority: 5 };
+  if (/\.(?:aif|aiff)$/i.test(name) || /\baiff?\b/i.test(format)) return { mime: "audio/aiff", priority: 6 };
+  return null;
+}
+
+function directTrackKey(file: FileRow): string {
+  const folder = file.name.includes("/") ? file.name.slice(0, file.name.lastIndexOf("/")) : "";
+  const trackNumber = Number.parseInt(file.track ?? "", 10);
+  if (Number.isFinite(trackNumber)) return `${folder}|track:${trackNumber}`;
+  const title = cleanTitle(file.title || file.name.split("/").pop() || file.name)
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return `${folder}|title:${title}`;
+}
+
 function audioFiles(files: FileRow[]): FileRow[] {
-  let pick = files.filter((f) => /mp3/i.test(f.format ?? ""));
-  if (!pick.length) pick = files.filter((f) => /ogg|opus/i.test(f.format ?? ""));
-  return pick;
+  const probe = typeof Audio === "undefined" ? null : new Audio();
+  const candidates = files.flatMap((file) => {
+    const format = audioFormat(file);
+    if (!format || (probe && !probe.canPlayType(format.mime))) return [];
+    return [{ file, format }];
+  }).sort((a, b) => a.format.priority - b.format.priority || a.file.name.localeCompare(b.file.name, undefined, { numeric: true }));
+
+  const selected = new Map<string, FileRow>();
+  for (const candidate of candidates) {
+    const key = directTrackKey(candidate.file);
+    if (!key.endsWith("title:")) {
+      if (selected.has(key)) continue;
+    } else if (selected.has(key)) continue;
+    selected.set(key, candidate.file);
+  }
+  return [...selected.values()].sort((a, b) => {
+    const ta = parseInt(a.track ?? "", 10);
+    const tb = parseInt(b.track ?? "", 10);
+    if (isFinite(ta) && isFinite(tb) && ta !== tb) return ta - tb;
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
 }
 
 async function metadata(id: string, signal?: AbortSignal): Promise<MetaData> {
@@ -497,20 +543,65 @@ async function metadata(id: string, signal?: AbortSignal): Promise<MetaData> {
   return p;
 }
 
-/** Быстрая классификация результата: одна запись или сборник из нескольких треков. */
+/** Prefer named front artwork; reject Archive-generated waveforms and secondary disc scans. */
 const isUsefulImage = (f: FileRow) =>
-  /\.(jpe?g|png|webp)$/i.test(f.name) &&
-  !/(spectrogram|waveform|_thumb|__ia|itemimage|format=|height=|width=|wave\.)/i.test(f.name) &&
-  (Number(f.size) || 0) > 20_000;
+  /\.(jpe?g|png|webp|avif)$/i.test(f.name) &&
+  !/(spectrogram|waveform|_thumb|__ia|itemimage|format=|height=|width=|wave\.|back.?cover|disc.?label|booklet|tray|inlay)/i.test(f.name) &&
+  (Number(f.size) || 0) > 4_000;
 
 function imageUrl(id: string, files: FileRow[]): string | undefined {
-  const image = files.filter(isUsefulImage).sort((a, b) => (Number(b.size) || 0) - (Number(a.size) || 0))[0];
+  const image = files.filter(isUsefulImage).sort((a, b) => {
+    const frontA = /(^|[\/_ .-])(?:cover|front|folder|artwork|album)([\/_ .-]|$)/i.test(a.name) ? 1 : 0;
+    const frontB = /(^|[\/_ .-])(?:cover|front|folder|artwork|album)([\/_ .-]|$)/i.test(b.name) ? 1 : 0;
+    return frontB - frontA || (Number(b.size) || 0) - (Number(a.size) || 0);
+  })[0];
   return image ? `${BASE}/download/${encodeURIComponent(id)}/${image.name.split("/").map(encodeURIComponent).join("/")}` : undefined;
 }
 
-export async function inspectAlbum(id: string): Promise<{ count: number; cover?: string }> {
+async function readCueText(response: Response, maxBytes = 512 * 1024): Promise<string | null> {
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    loaded += value.byteLength;
+    if (loaded > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+async function cueAudioTracks(id: string, files: FileRow[], signal?: AbortSignal): Promise<CueAudioTrack[]> {
+  const cueFiles = files.filter((file) => /\.cue$/i.test(file.name) && (!file.size || Number(file.size) <= 512 * 1024));
+  for (const cue of cueFiles) {
+    const params = new URLSearchParams({ mode: "cue", identifier: id, file: cue.name });
+    const response = await fetch(`/api/archive-file?${params.toString()}`, { signal });
+    if (!response.ok) continue;
+    const text = await readCueText(response);
+    if (text === null) continue;
+    const tracks = parseCueSheet(text, files);
+    if (tracks.length) return tracks;
+  }
+  return [];
+}
+
+export async function inspectAlbum(id: string): Promise<{ count: number; cover?: string; source?: "files" | "cd-image" }> {
   const meta = await metadata(id);
-  return { count: audioFiles(meta.files).length, cover: imageUrl(id, meta.files) };
+  const direct = audioFiles(meta.files);
+  if (direct.length) return { count: direct.length, cover: imageUrl(id, meta.files), source: "files" };
+  const discTracks = await cueAudioTracks(id, meta.files);
+  return { count: discTracks.length, cover: imageUrl(id, meta.files), source: discTracks.length ? "cd-image" : undefined };
 }
 
 function hash36(s: string): string {
@@ -537,13 +628,50 @@ const cleanTitle = (s: string) =>
     .replace(/_/g, " ")
     .trim();
 
-export async function albumTracks(id: string, signal?: AbortSignal): Promise<{ title: string; creator: string; cover?: string; tracks: PlaylistItem[] }> {
+export async function albumTracks(
+  id: string,
+  signal?: AbortSignal,
+  hint?: Pick<Album, "title" | "creator" | "year">,
+): Promise<{ title: string; creator: string; cover?: string; source: "files" | "cd-image"; tracks: PlaylistItem[] }> {
   const meta = await metadata(id, signal);
-  const pick = audioFiles(meta.files);
-  const album = fixText(meta.title);
-  const creator = fixText(meta.creator);
-  const cover = imageUrl(id, meta.files);
+  const album = fixText(meta.title) || fixText(hint?.title) || id;
+  const creator = fixText(meta.creator) || fixText(hint?.creator);
+  const embeddedCover = imageUrl(id, meta.files);
+  const direct = audioFiles(meta.files);
+  let discTracks: CueAudioTrack[] = [];
+  if (!direct.length) discTracks = await cueAudioTracks(id, meta.files, signal);
 
+  const catalog = (!embeddedCover || discTracks.length)
+    ? await lookupArchiveAlbumBriefly(creator, album, hint?.year, discTracks.length || undefined)
+    : null;
+  const cover = embeddedCover || catalog?.cover;
+  const tracks: PlaylistItem[] = [];
+
+  if (discTracks.length) {
+    for (const [index, track] of discTracks.entries()) {
+      const catalogTrack = catalog?.tracks.find((item) => item.number === track.number) ?? catalog?.tracks[index];
+      const title = fixText(track.title || catalogTrack?.title || `Трек ${String(track.number).padStart(2, "0")}`);
+      const duration = (track.endSector - track.startSector) / CDDA_SECTORS_PER_SECOND;
+      const imageUrl = `${BASE}/download/${encodeURIComponent(id)}/${track.file.name.split("/").map(encodeURIComponent).join("/")}`;
+      const url = makeCddaTrackUrl(imageUrl, track.number, track.startSector, track.endSector, track.byteOrder);
+      tracks.push({
+        id: `ia-${hash36(`${id}/cdda/${track.file.name}/${track.number}/${track.startSector}/${track.endSector}`)}`,
+        title,
+        subtitle: fixText(track.performer || catalogTrack?.artist || creator) || undefined,
+        url,
+        kind: "vod",
+        logo: cover,
+        genre: "Музыка",
+        duration,
+        size: (track.endSector - track.startSector) * CDDA_SECTOR_BYTES + 44,
+        note: album,
+        addedAt: Date.now(),
+      });
+    }
+    return { title: album, creator, cover, source: "cd-image", tracks };
+  }
+
+  const pick = direct;
   pick.sort((a, b) => {
     const ta = parseInt(a.track ?? "", 10);
     const tb = parseInt(b.track ?? "", 10);
@@ -552,25 +680,27 @@ export async function albumTracks(id: string, signal?: AbortSignal): Promise<{ t
   });
 
   const seen = new Set<string>();
-  const tracks: PlaylistItem[] = [];
-  for (const f of pick) {
-    const title = fixText(cleanTitle(f.title || f.name.split("/").pop() || f.name));
-    const key = title.toLowerCase();
-    if (!title || seen.has(key)) continue; // один и тот же трек в разных битрейтах берём один раз
+  for (const [index, file] of pick.entries()) {
+    const key = directTrackKey(file);
+    if (seen.has(key)) continue;
     seen.add(key);
+    const catalogNumber = Number.parseInt(file.track ?? "", 10) || index + 1;
+    const catalogTrack = catalog?.tracks.find((item) => item.number === catalogNumber) ?? catalog?.tracks[index];
+    const title = fixText(file.title || catalogTrack?.title || cleanTitle(file.name.split("/").pop() || file.name));
+    if (!title) continue;
     tracks.push({
-      id: `ia-${hash36(`${id}/${f.name}`)}`,
+      id: `ia-${hash36(`${id}/${file.name}`)}`,
       title,
-      subtitle: fixText(f.creator || creator) || undefined,
-      url: `${BASE}/download/${encodeURIComponent(id)}/${f.name.split("/").map(encodeURIComponent).join("/")}`,
+      subtitle: fixText(file.creator || catalogTrack?.artist || creator) || undefined,
+      url: `${BASE}/download/${encodeURIComponent(id)}/${file.name.split("/").map(encodeURIComponent).join("/")}`,
       kind: "vod",
       logo: cover,
       genre: "Музыка",
-      duration: seconds(f.length),
-      size: f.size ? Number(f.size) || undefined : undefined,
+      duration: seconds(file.length) ?? catalogTrack?.duration,
+      size: file.size ? Number(file.size) || undefined : undefined,
       note: album,
       addedAt: Date.now(),
     });
   }
-  return { title: album, creator, cover, tracks };
+  return { title: album, creator, cover, source: "files", tracks };
 }

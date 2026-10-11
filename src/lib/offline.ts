@@ -1,5 +1,6 @@
 import { activeDbName, db } from "./db";
 import type { OfflineItem, Station } from "./types";
+import { fetchCddaWav, parseCddaTrackUrl } from "./cdda";
 
 const CACHE = "radio-audio-v1";
 
@@ -164,6 +165,11 @@ export async function putOfflineBlob(stationId: string, url: string, body: BodyI
 
 export async function downloadVod(station: Station, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal) {
   if (!cacheSupported()) throw new Error("Cache API недоступен в этом браузере");
+  if (parseCddaTrackUrl(station.url)) {
+    const wav = await fetchCddaWav(station.url, signal, onProgress);
+    await putOfflineBlob(station.id, station.url, wav, "audio/wav", wav.size);
+    return wav.size;
+  }
   const res = await fetch(station.url, { mode: "cors", signal });
   if (!res.ok) throw new Error(`Сервер ответил ${res.status}`);
   const total = Number(res.headers.get("content-length")) || 0;

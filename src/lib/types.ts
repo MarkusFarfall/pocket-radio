@@ -78,6 +78,8 @@ export interface SavedTrack {
   artist?: string;
   station: string;
   stationId: string;
+  /** Снимок обложки источника на момент сохранения. */
+  logo?: string;
   ts: number;
 }
 

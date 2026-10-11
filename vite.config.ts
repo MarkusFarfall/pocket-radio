@@ -9,16 +9,40 @@ const radioGardenProxy = {
   rewrite: (path: string) => path.replace(/^\/api\/radio-garden/, "/api"),
 };
 
+function rewriteArchiveFile(path: string): string {
+  const url = new URL(path, "http://vite.local");
+  if (url.pathname !== "/api/archive-file") return path;
+  const identifier = url.searchParams.get("identifier") ?? "";
+  const file = url.searchParams.get("file") ?? "";
+  if (!identifier || !file) return path;
+  const encodedFile = file.split("/").map((part) => encodeURIComponent(part)).join("/");
+  return `/download/${encodeURIComponent(identifier)}/${encodedFile}`;
+}
+
+const archiveFileProxy = {
+  target: "https://archive.org",
+  changeOrigin: true,
+  // Archive.org redirects file downloads to CDN hosts; follow server-side to keep the browser same-origin.
+  followRedirects: true,
+  secure: true,
+  rewrite: rewriteArchiveFile,
+};
+
+const proxy = {
+  "/api/radio-garden": radioGardenProxy,
+  "/api/archive-file": archiveFileProxy,
+};
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     host: "0.0.0.0",
     allowedHosts: [".e2b.app"],
-    proxy: { "/api/radio-garden": radioGardenProxy },
+    proxy,
   },
   preview: {
     host: "0.0.0.0",
     allowedHosts: [".e2b.app"],
-    proxy: { "/api/radio-garden": radioGardenProxy },
+    proxy,
   },
 });
