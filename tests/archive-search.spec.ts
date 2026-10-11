@@ -11,7 +11,11 @@ async function openCollections(page: Page) {
 
 type ArchiveDoc = Record<string, unknown>;
 
-async function archiveDocs(page: Page, docs: ArchiveDoc[] | ((query: string) => ArchiveDoc[])) {
+async function archiveDocs(
+  page: Page,
+  docs: ArchiveDoc[] | ((query: string) => ArchiveDoc[]),
+  metadataFixtures: Record<string, { metadata?: { title?: string; creator?: string }; files?: { name: string; format?: string; title?: string; creator?: string }[] }> = {},
+) {
   const queries: string[] = [];
   await page.route("https://archive.org/advancedsearch.php**", async (route) => {
     const url = new URL(route.request().url());
@@ -31,7 +35,7 @@ async function archiveDocs(page: Page, docs: ArchiveDoc[] | ((query: string) => 
       status: 200,
       contentType: "application/json",
       headers: { "Access-Control-Allow-Origin": "*" },
-      body: JSON.stringify({ metadata: { title: id, creator: "" }, files: [] }),
+      body: JSON.stringify(metadataFixtures[id] ?? { metadata: { title: id, creator: "" }, files: [] }),
     });
   });
   return queries;
@@ -255,4 +259,118 @@ test("smart artist search finds Zemfira variants and Mikhail Krug when creator m
   await expect(page.getByText("Михаил Круг — Владимирский централ", { exact: true })).toBeVisible();
   await expect(page.getByText("Михаил Круг рассказывает сказку", { exact: true })).toHaveCount(0);
   expect(queries.some((query) => query.includes('title:"Mikhail Krug"'))).toBe(true);
+});
+
+test("artist search reaches subject-tagged music but excludes stray title mentions and broadcasts", async ({ page }) => {
+  const creatorMatch: ArchiveDoc = {
+    identifier: "alphaville-creator-match", title: "The Breathtaking Blue", creator: "Alphaville", downloads: 90, collection: ["opensource_audio"],
+  };
+  const titleMatch: ArchiveDoc = {
+    identifier: "alphaville-title-match", title: "Alphaville - Afternoons in Utopia", creator: "", downloads: 80, collection: ["hifidelity"],
+  };
+  const movieTitleNoise: ArchiveDoc = {
+    identifier: "alphaville-movie-noise", title: "Paul Misraki - 1965 - Alphaville OST", creator: "Paul Misraki", downloads: 500, collection: ["hifidelity"],
+  };
+  const subjectMatch: ArchiveDoc = {
+    identifier: "alphaville-subject-match", title: "Big In Japan", creator: "", subject: ["Alphaville", "Big In Japan"], downloads: 70, collection: ["opensource_audio"],
+  };
+  const broadcastNoise: ArchiveDoc = {
+    identifier: "alphaville-radio-noise", title: "Progrock for Requesters", creator: "Radio Archive", subject: ["Alphaville"], downloads: 900, collection: ["radioshowarchive"],
+  };
+  const popcastNoise: ArchiveDoc = {
+    identifier: "alphaville-popcast-noise", title: "Loopy Popcast, May 2006", creator: "Loopy", subject: ["Alphaville"], downloads: 400, collection: ["ourmedia"],
+  };
+  const radioCreatorNoise: ArchiveDoc = {
+    identifier: "alphaville-radio-creator-noise", title: "Programming for 7th - 21st April 2018", creator: "Hobart Radio International", subject: ["Alphaville", "Radio"], downloads: 200, collection: ["opensource_audio"],
+  };
+  const episodeNoise: ArchiveDoc = {
+    identifier: "alphaville-episode-noise", title: "TFR Ep. 467: Alphaville", creator: "The First Run", subject: ["Alphaville"], downloads: 200, collection: ["opensource_audio"],
+  };
+  const exactTitleNoise: ArchiveDoc = {
+    identifier: "alphaville-exact-title-noise", title: "Alphaville", creator: "LAILA ELEKTRA", subject: ["Forever Young"], downloads: 300, collection: ["opensource_audio"],
+  };
+  const uncreditedTitleNoise: ArchiveDoc = {
+    identifier: "alphaville-uncredited-title-noise", title: "Alphaville", creator: "", subject: ["French New Wave"], downloads: 100, collection: ["opensource_audio"],
+  };
+  const coverSubjectNoise: ArchiveDoc = {
+    identifier: "alphaville-cover-noise", title: "Interactive - Forever Young", creator: "Interactive", subject: ["Alphaville"], downloads: 500, collection: ["opensource_audio"],
+  };
+  const mixSubjectNoise: ArchiveDoc = {
+    identifier: "alphaville-mix-noise", title: "Varios 80/90 Remember A", creator: "Man-Equinox", subject: ["Alphaville"], downloads: 250, collection: ["hifidelity"],
+  };
+  const noAudioSubjectNoise: ArchiveDoc = {
+    identifier: "alphaville-no-audio-noise", title: "Relevans Music Alphaville Glorioso Dia", creator: "", subject: ["Alphaville"], downloads: 40, collection: ["opensource_audio"],
+  };
+  const queries = await archiveDocs(page, (query) => {
+    if (query.includes('creator:"Alphaville"')) return [creatorMatch];
+    if (query.includes('title:"Alphaville"')) return [titleMatch, movieTitleNoise, exactTitleNoise, uncreditedTitleNoise];
+    if (query.includes('subject:"Alphaville"')) return [subjectMatch, broadcastNoise, popcastNoise, radioCreatorNoise, episodeNoise, exactTitleNoise, coverSubjectNoise, mixSubjectNoise, noAudioSubjectNoise];
+    return [];
+  }, {
+    "alphaville-subject-match": {
+      metadata: { title: "Big In Japan", creator: "" },
+      files: [{ name: "ALPHAVILLE_-_BIG_IN_JAPAN.mp3", title: "Big In Japan", format: "VBR MP3" }],
+    },
+    "alphaville-cover-noise": {
+      metadata: { title: "Forever Young", creator: "Interactive" },
+      files: [{ name: "Interactive - Forever Young.mp3", title: "Forever Young", format: "MP3" }],
+    },
+    "alphaville-mix-noise": {
+      metadata: { title: "Varios 80/90 Remember A", creator: "Man-Equinox" },
+      files: [
+        { name: "Alphaville - Big In Japan.mp3", title: "Big In Japan", creator: "Alphaville", format: "MP3" },
+        { name: "A-Ha - Take On Me.mp3", title: "Take On Me", creator: "A-Ha", format: "MP3" },
+      ],
+    },
+  });
+
+  await openCollections(page);
+  await page.getByRole("button", { name: "По исполнителю", exact: true }).click();
+  await page.getByLabel("Запрос для поиска офлайн-музыки").fill("Alphaville");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "«Alphaville»" })).toBeVisible();
+  await expect(page.getByText("The Breathtaking Blue", { exact: true })).toBeVisible();
+  await expect(page.getByText("Alphaville - Afternoons in Utopia", { exact: true })).toBeVisible();
+  await expect(page.getByText("Big In Japan", { exact: true })).toBeVisible();
+  await expect(page.getByText(/совпало в темах/).first()).toBeVisible();
+  await expect(page.getByText("Paul Misraki - 1965 - Alphaville OST", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("LAILA ELEKTRA", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Alphaville Автор не указан/ })).toHaveCount(0);
+  await expect(page.getByText("Progrock for Requesters", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Loopy Popcast, May 2006", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Programming for 7th - 21st April 2018", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("TFR Ep. 467: Alphaville", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Interactive - Forever Young", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Varios 80/90 Remember A", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Relevans Music Alphaville Glorioso Dia", { exact: true })).toHaveCount(0);
+  expect(queries.some((query) => query.includes('subject:"Alphaville"'))).toBe(true);
+});
+
+test("visited tabs keep artist-search state and switch without page animation or navigation", async ({ page }) => {
+  const docs: ArchiveDoc[] = [
+    { identifier: "talk-talk-stays-put", title: "Spirit of Eden", creator: "Talk Talk", downloads: 120, collection: ["opensource_audio"] },
+  ];
+  const queries = await archiveDocs(page, docs);
+
+  await openCollections(page);
+  const input = page.getByLabel("Запрос для поиска офлайн-музыки");
+  await input.fill("Talk Talk");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
+  await expect(page.getByText("Spirit of Eden", { exact: true })).toBeVisible();
+  const queryCount = queries.length;
+
+  await page.getByRole("button", { name: "Главная", exact: true }).click();
+  await expect(page.locator('[data-tab-panel="discover"]')).toBeHidden();
+  await page.getByRole("button", { name: "Обзор", exact: true }).click();
+  await expect(input).toHaveValue("Talk Talk");
+  await expect(page.getByText("Spirit of Eden", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Раздел обзора").selectOption("packs");
+  await page.getByLabel("Раздел обзора").selectOption("collections");
+  await expect(input).toHaveValue("Talk Talk");
+  await expect(page.getByText("Spirit of Eden", { exact: true })).toBeVisible();
+  expect(queries).toHaveLength(queryCount);
+  expect(await page.locator('[data-tab-panel="discover"]').evaluate((el) => getComputedStyle(el).animationName)).toBe("none");
+  expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(1);
 });

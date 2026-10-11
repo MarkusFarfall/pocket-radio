@@ -71,7 +71,7 @@ test("statistics total local listening seconds, offline share, and period totals
   await page.reload();
   await page.getByRole("button", { name: "Ещё", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: /Статистика/ }).click();
-  await expect(page.locator("main h1").first()).toHaveText("Статистика");
+  await expect(page.locator('main [data-tab-panel="stats"] h1')).toHaveText("Статистика");
   await expect(page.getByTestId("stats-total-time")).toHaveText("3 ч 5 м");
   await expect(page.getByText("3 активных дня", { exact: true })).toBeVisible();
   await expect(page.getByText("3 включения", { exact: true })).toBeVisible();

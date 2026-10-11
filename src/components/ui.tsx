@@ -40,6 +40,11 @@ export function Modal({
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
+    const closeOnNavigation = () => closeRef.current();
+    window.addEventListener("pr:tabchange", closeOnNavigation);
+    return () => window.removeEventListener("pr:tabchange", closeOnNavigation);
+  }, []);
+  useEffect(() => {
     let timer = 0;
     if (open) {
       setPresent(true);

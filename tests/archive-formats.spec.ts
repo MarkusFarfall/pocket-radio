@@ -95,6 +95,8 @@ test("ready-made browser-supported Archive audio formats are kept and duplicate 
     { name: "04-track.flac", format: "FLAC", track: "4", title: "FLAC track", size: "1500" },
     { name: "05-track.wav", format: "WAVE", track: "5", title: "WAV track", size: "1600" },
     { name: "06-track.wma", format: "Windows Media Audio", track: "6", title: "Unsupported WMA", size: "1700" },
+    { name: "07-bonus.mp3", format: "MP3", track: "7", title: "Bonus track", size: "1800" },
+    { name: "07-bonus.ogg", format: "Ogg Vorbis", size: "1900" },
   ];
   await page.route("https://archive.org/metadata/format-fixture", (route) =>
     route.fulfill({
@@ -111,8 +113,8 @@ test("ready-made browser-supported Archive audio formats are kept and duplicate 
     return result.tracks.map((track) => ({ title: track.title, file: new URL(track.url).pathname.split("/").at(-1) }));
   });
 
-  expect(tracks.map((track) => track.title)).toEqual(["Song in MP3", "Ogg track", "Opus track", "FLAC track", "WAV track"]);
-  expect(tracks.map((track) => track.file)).toEqual(["01-track.mp3", "02-track.ogg", "03-track.opus", "04-track.flac", "05-track.wav"]);
+  expect(tracks.map((track) => track.title)).toEqual(["Song in MP3", "Ogg track", "Opus track", "FLAC track", "WAV track", "Bonus track"]);
+  expect(tracks.map((track) => track.file)).toEqual(["01-track.mp3", "02-track.ogg", "03-track.opus", "04-track.flac", "05-track.wav", "07-bonus.mp3"]);
   expect(tracks.some((track) => track.title.includes("Duplicate"))).toBe(false);
   expect(tracks.some((track) => track.title.includes("Unsupported"))).toBe(false);
 });

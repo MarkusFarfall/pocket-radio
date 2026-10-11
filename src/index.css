@@ -174,16 +174,6 @@ input[type="range"].slider::-moz-range-thumb {
   animation: pop-in 0.2s ease-out;
 }
 
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 @keyframes backdrop-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -200,11 +190,6 @@ input[type="range"].slider::-moz-range-thumb {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.025); }
 }
-@keyframes nav-pop {
-  0% { transform: scale(0.82); }
-  60% { transform: scale(1.12); }
-  100% { transform: scale(1); }
-}
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-10px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -212,9 +197,6 @@ input[type="range"].slider::-moz-range-thumb {
 @keyframes shimmer {
   from { background-position: 180% 0; }
   to { background-position: -80% 0; }
-}
-.page-motion {
-  animation: page-enter 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .modal-backdrop {
   animation: backdrop-in 0.2s ease-out both;
@@ -257,10 +239,6 @@ input[type="range"].slider::-moz-range-thumb {
   }
 }
 .motion-card:active { transform: scale(0.985); }
-[aria-current="page"] > svg,
-[aria-current="page"] > span > svg {
-  animation: nav-pop 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-}
 .toast-motion { animation: toast-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .recovery-bar { animation: recovery-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; will-change: transform, opacity; }
 @keyframes recovery-in {
@@ -268,11 +246,6 @@ input[type="range"].slider::-moz-range-thumb {
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
 .volume-pop { animation: pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: bottom center; }
-::view-transition-old(root) { animation: 0.16s ease-in both vt-old; }
-::view-transition-new(root) { animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both vt-new; }
-@keyframes vt-old { to { opacity: 0; transform: scale(0.995); } }
-@keyframes vt-new { from { opacity: 0; transform: translateY(8px); } }
-
 /* ------------------------------ варианты большого плеера ------------------------------ */
 @keyframes player-breathe {
   0%, 100% { transform: scale(1); filter: drop-shadow(0 14px 26px hsl(var(--player-hue) 70% 42% / 0.12)); }
@@ -362,8 +335,6 @@ button:active:not(:disabled) { transform: scale(0.975); }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  ::view-transition-old(root),
-  ::view-transition-new(root) { animation: none !important; }
 }
 
 .safe-bottom {

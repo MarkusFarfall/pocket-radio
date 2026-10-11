@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { ChevronRight, FileUp, Keyboard, MoreHorizontal, Plus, Wifi, WifiOff } from "lucide-react";
 import type { Draft, Station } from "./lib/types";
 import { useOfflineItems, useOnline, useStations } from "./lib/hooks";
@@ -35,7 +35,7 @@ import { Playlists } from "./views/Playlists";
 import { Discover } from "./views/Discover";
 import { Stats } from "./views/Stats";
 import { Settings } from "./views/Settings";
-import type { ViewProps } from "./views/shared";
+import type { Tab, ViewProps } from "./views/shared";
 
 export default function App() {
   const auth = useAuth();
@@ -44,6 +44,9 @@ export default function App() {
   const isDesktop = useIsDesktop();
   const history = useTabHistory(getAppPrefs().startTab);
   const { tab, go: setTab } = history;
+  const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set([tab]));
+  const renderedTabs = new Set(visitedTabs);
+  renderedTabs.add(tab);
   const stationsRaw = useStations();
   const stations = useMemo(() => stationsRaw ?? [], [stationsRaw]);
   const loaded = stationsRaw !== undefined;
@@ -66,8 +69,25 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const restored = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
+  const previousTab = useRef(tab);
+  const tabScrollPositions = useRef(new Map<Tab, number>());
 
   const studio = isDesktop && dp.shell === "studio";
+
+  useEffect(() => {
+    setVisitedTabs((visited) => visited.has(tab) ? visited : new Set(visited).add(tab));
+    if (previousTab.current !== tab) window.dispatchEvent(new Event("pr:tabchange"));
+    previousTab.current = tab;
+  }, [tab]);
+
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (main) main.scrollTop = tabScrollPositions.current.get(tab) ?? 0;
+  }, [tab]);
+
+  const rememberMainScroll = useCallback((event: UIEvent<HTMLElement>) => {
+    tabScrollPositions.current.set(tab, event.currentTarget.scrollTop);
+  }, [tab]);
 
   // каталог → движок плеера
   useEffect(() => {
@@ -148,10 +168,6 @@ export default function App() {
     },
   });
 
-  useEffect(() => {
-    mainRef.current?.scrollTo({ top: 0 });
-  }, [tab]);
-
   const openEdit = (s: Station) => {
     setEditing(s);
     setDraft(null);
@@ -199,26 +215,34 @@ export default function App() {
   const hue = p.station ? hueOf(p.station.name) : 0;
   const glow = ui.glow && p.station ? { backgroundImage: `radial-gradient(70rem 26rem at 50% -9rem, hsl(${hue} 72% 52% / 0.22), transparent 70%)` } : undefined;
 
-  const content = !loaded ? (
+  const contentFor = (pageTab: Tab) => !loaded ? (
     <div className="py-24 text-center text-sm text-muted">Загрузка…</div>
-  ) : tab === "home" ? (
+  ) : pageTab === "home" ? (
     studio ? (
       <HomeStudio {...view} />
     ) : (
       <Home {...view} />
     )
-  ) : tab === "catalog" ? (
+  ) : pageTab === "catalog" ? (
     <Catalog {...view} />
-  ) : tab === "playlists" ? (
+  ) : pageTab === "playlists" ? (
     <Playlists key={plKey} {...view} />
-  ) : tab === "discover" ? (
+  ) : pageTab === "discover" ? (
     <Discover {...view} />
-  ) : tab === "stats" ? (
+  ) : pageTab === "stats" ? (
     <Stats stations={stations} />
   ) : (
     <Settings stations={stations} online={online} onAccount={() => setAccountOpen(true)} />
   );
-  const page = <div key={tab} className="page-motion">{content}</div>;
+  const page = (
+    <div className="tab-panels">
+      {NAV.filter(({ id }) => renderedTabs.has(id)).map(({ id }) => (
+        <div key={id} data-tab-panel={id} hidden={id !== tab} aria-hidden={id !== tab}>
+          {contentFor(id)}
+        </div>
+      ))}
+    </div>
+  );
 
   const overlays = (
     <>
@@ -450,7 +474,7 @@ export default function App() {
           </div>
         )}
 
-        <main ref={mainRef} className={cn("min-h-0 flex-1 overflow-y-auto px-4 md:px-8 lg:px-10", hasPlayer ? "pb-44 lg:pb-10" : "pb-28 lg:pb-10")}>
+        <main ref={mainRef} onScroll={rememberMainScroll} className={cn("min-h-0 flex-1 overflow-y-auto px-4 md:px-8 lg:px-10", hasPlayer ? "pb-44 lg:pb-10" : "pb-28 lg:pb-10")}>
           <div className="mx-auto max-w-[1480px] py-5 md:py-8">{page}</div>
         </main>
 

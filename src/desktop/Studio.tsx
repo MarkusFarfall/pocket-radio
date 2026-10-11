@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from "react";
 import { ChevronLeft, ChevronRight, Keyboard, PanelRight, Plus, Wifi, WifiOff } from "lucide-react";
 import type { Station } from "../lib/types";
 import type { Tab } from "../views/shared";
@@ -89,11 +89,17 @@ export function Studio({ tab, onTab, back, forward, canBack, canForward, station
   const wide = useMedia("(min-width: 1280px)");
   const p = usePlayer();
   const scroller = useRef<HTMLElement>(null);
+  const scrollPositions = useRef(new Map<Tab, number>());
   const showPanel = dp.panel && wide && !!p.station;
 
-  useEffect(() => {
-    scroller.current?.scrollTo({ top: 0 });
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollTop = scrollPositions.current.get(tab) ?? 0;
   }, [tab]);
+
+  const rememberScroll = (event: UIEvent<HTMLElement>) => {
+    scrollPositions.current.set(tab, event.currentTarget.scrollTop);
+  };
 
   const round = "h-9 w-9 rounded-full text-ink transition enabled:hover:bg-surface-2 disabled:opacity-30";
 
@@ -167,7 +173,7 @@ export function Studio({ tab, onTab, back, forward, canBack, canForward, station
               )}
             </div>
           </header>
-          <main ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-4 pb-10 md:px-8">
+          <main ref={scroller} onScroll={rememberScroll} className="min-h-0 flex-1 overflow-y-auto px-4 pb-10 md:px-8">
             <div className="mx-auto max-w-[1360px] pt-1">{children}</div>
           </main>
         </div>

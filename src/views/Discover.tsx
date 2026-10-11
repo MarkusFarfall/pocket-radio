@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Disc3, FileText, Globe2, Mic2, Package, type LucideIcon } from "lucide-react";
 import type { ViewProps } from "./shared";
 import { cn } from "../utils/cn";
@@ -24,16 +24,36 @@ export function Discover({ stations, online, onPlay }: ViewProps) {
     if (saved === "online") return "search";
     return TABS.some(([id]) => id === saved) ? (saved as Sub) : "packs";
   });
+  const [visitedSubs, setVisitedSubs] = useState<Set<Sub>>(() => new Set([sub]));
+  const renderedSubs = new Set(visitedSubs);
+  renderedSubs.add(sub);
+  const subScrollPositions = useRef(new Map<Sub, number>());
+  const currentSub = useRef(sub);
+  currentSub.current = sub;
   const have = useMemo(() => new Set(stations.map((s) => s.url)), [stations]);
+
+  useEffect(() => {
+    setVisitedSubs((visited) => visited.has(sub) ? visited : new Set(visited).add(sub));
+  }, [sub]);
+
+  useEffect(() => {
+    const scroller = root.current?.closest("main");
+    if (!scroller) return;
+    const remember = () => subScrollPositions.current.set(currentSub.current, scroller.scrollTop);
+    scroller.addEventListener("scroll", remember, { passive: true });
+    return () => scroller.removeEventListener("scroll", remember);
+  }, []);
+
+  useLayoutEffect(() => {
+    const scroller = root.current?.closest("main");
+    if (scroller) scroller.scrollTop = subScrollPositions.current.get(sub) ?? 0;
+  }, [sub]);
+
   const pick = (s: Sub) => {
+    if (s !== sub) window.dispatchEvent(new Event("pr:tabchange"));
     setSub(s);
     localStorage.setItem("radio.discoverTab", s);
   };
-  // У разделов разная высота. Не сохраняем прежнюю позицию прокрутки, иначе заголовок
-  // нового раздела оказывается за верхней панелью (особенно заметно на телефоне).
-  useEffect(() => {
-    root.current?.closest("main")?.scrollTo({ top: 0, behavior: "auto" });
-  }, [sub]);
   return (
     <div ref={root} className="space-y-5">
       <div>
@@ -60,11 +80,17 @@ export function Discover({ stations, online, onPlay }: ViewProps) {
           ))}
         </div>
       </div>
-      {sub === "packs" && <Packs have={have} onPlay={onPlay} />}
-      {sub === "search" && <Search have={have} online={online} onPlay={onPlay} />}
-      {sub === "podcasts" && <Podcasts online={online} />}
-      {sub === "collections" && <Collections online={online} onPlay={onPlay} />}
-      {sub === "playlists" && <Playlists have={have} online={online} onPlay={onPlay} />}
+      <div data-discover-panels>
+        {TABS.map(([id]) => renderedSubs.has(id) ? (
+          <div key={id} data-discover-panel={id} hidden={id !== sub} aria-hidden={id !== sub}>
+            {id === "packs" && <Packs have={have} onPlay={onPlay} />}
+            {id === "search" && <Search have={have} online={online} onPlay={onPlay} />}
+            {id === "podcasts" && <Podcasts online={online} />}
+            {id === "collections" && <Collections online={online} onPlay={onPlay} />}
+            {id === "playlists" && <Playlists have={have} online={online} onPlay={onPlay} />}
+          </div>
+        ) : null)}
+      </div>
     </div>
   );
 }

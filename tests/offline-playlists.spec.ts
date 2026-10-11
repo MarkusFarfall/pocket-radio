@@ -440,6 +440,8 @@ test("adding offline music to an empty playlist saves its first track cover", as
 
   await page.getByRole("button", { name: "Назад", exact: true }).click();
   await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Empty to album" })).toBeVisible();
+  await page.getByRole("button", { name: "Все плейлисты", exact: true }).click();
   const card = page.getByRole("button", { name: "Открыть «Empty to album»" });
   await expect(card.locator("img")).toHaveCount(1);
   await expect(card.locator("img")).toHaveAttribute("src", /^data:image\/jpeg/);
@@ -492,29 +494,31 @@ test("local and online search modes remain distinct and usable", async ({ page }
   await expect(page.getByRole("dialog", { name: "Быстрый поиск" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Каталог", exact: true }).click();
-  await page.locator("input[data-search]").fill("SomaFM");
+  await page.locator('[data-tab-panel="catalog"] input[data-search]').fill("SomaFM");
   await expect(page.getByText("SomaFM · Groove Salad", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Плейлисты" })).toBeVisible();
 
   await page.getByRole("button", { name: "Обзор", exact: true }).click();
   await page.getByLabel("Раздел обзора").selectOption("search");
-  await page.locator("input[data-search]").fill("jazz");
+  const discoverSearch = page.locator('[data-discover-panel="search"] input[data-search]');
+  await discoverSearch.fill("jazz");
   await expect(page.getByText("Fixture Jazz Radio")).toBeVisible({ timeout: 10_000 });
   await page.getByLabel("Источник каталога").selectOption("soma");
   await expect(page.getByText("Fixture Jazz Channel")).toBeVisible({ timeout: 10_000 });
   await page.getByLabel("Источник каталога").selectOption("garden");
-  await page.locator("input[data-search]").fill("jazz");
+  await discoverSearch.fill("jazz");
   await expect(page.getByText("Fixture Garden Jazz")).toBeVisible({ timeout: 10_000 });
 
   await page.getByLabel("Раздел обзора").selectOption("podcasts");
-  await page.locator("input[data-search]").fill("fixture");
+  const podcastSearch = page.locator('[data-discover-panel="podcasts"] input[data-search]');
+  await podcastSearch.fill("fixture");
   await expect(page.getByText("Fixture Podcast").first()).toBeVisible({ timeout: 10_000 });
   await page.getByRole("radiogroup", { name: "Что искать" }).getByRole("radio", { name: "Серии" }).click();
   await expect(page.getByText("Fixture episode")).toBeVisible({ timeout: 10_000 });
 
   await page.getByLabel("Раздел обзора").selectOption("playlists");
-  await page.locator("input[data-search]").fill("Германия");
+  await page.locator('[data-discover-panel="playlists"] input[data-search]').fill("Германия");
   await page.getByRole("button", { name: /Германия/ }).click();
   await expect(page.getByText("Fixture M3U Station")).toBeVisible({ timeout: 10_000 });
 

@@ -11,6 +11,10 @@ async function installStarter(page: Page) {
   await expect(page.getByRole("heading", { name: "Что послушаем?" })).toBeVisible();
 }
 
+function activeMainHeading(page: Page) {
+  return page.locator('main [data-tab-panel]:not([hidden]) h1').first();
+}
+
 async function expectNoHorizontalPageOverflow(page: Page) {
   const { viewport, document } = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
@@ -53,12 +57,13 @@ test("mobile catalog and Discover fit narrow viewports", async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.getByRole("button", { name: "Каталог", exact: true }).click();
 
-    const search = page.locator("input[data-search]");
+    const search = page.locator('[data-tab-panel="catalog"] input[data-search]');
     await expect(search).toBeVisible();
     const searchBox = await search.boundingBox();
     expect(searchBox?.width ?? 0, `search field should span the phone width (${width}px)`).toBeGreaterThan(width - 72);
 
-    await page.getByRole("button", { name: /Фильтры/ }).click();
+    const filters = page.getByRole("button", { name: /Фильтры/ });
+    if (await filters.getAttribute("aria-expanded") !== "true") await filters.click();
     await expect(page.getByRole("button", { name: /Избранные/ })).toBeVisible();
     await expectNoHorizontalPageOverflow(page);
 
@@ -174,18 +179,18 @@ test("mobile navigation, statistics, settings, and full player stay usable", asy
   ];
   for (const [nav, heading] of mainTabs) {
     await page.getByRole("button", { name: nav, exact: true }).click();
-    await expect(page.locator("main h1").first()).toContainText(heading);
+    await expect(activeMainHeading(page)).toContainText(heading);
     await expectNoHorizontalPageOverflow(page);
   }
 
   await page.getByRole("button", { name: "Ещё", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: /Статистика/ }).click();
-  await expect(page.locator("main h1").first()).toHaveText("Статистика");
+  await expect(activeMainHeading(page)).toHaveText("Статистика");
   await expectNoHorizontalPageOverflow(page);
 
   await page.getByRole("button", { name: "Ещё", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: /Настройки/ }).click();
-  await expect(page.locator("main h1").first()).toHaveText("Настройки");
+  await expect(activeMainHeading(page)).toHaveText("Настройки");
   await expectNoHorizontalPageOverflow(page);
 
   await page.getByRole("button", { name: "Каталог", exact: true }).click();

@@ -135,8 +135,9 @@ function normalizeSearchText(value: string): string {
 const SPOKEN_WORD_MARKERS = [
   "audiobook", "audiobooks", "audio book", "audio books", "librivox", "project gutenberg", "spoken word",
   "unabridged", "abridged audiobook", "narrated", "narration", "read by", "read aloud", "book reading",
-  "book on tape", "book on cd", "radio drama", "audio drama", "podcast", "lecture", "sermon", "interview",
-  "аудиокнига", "аудиокниги", "аудиоспектакль", "радиоспектакль", "радиопостановка",
+  "book on tape", "book on cd", "radio drama", "audio drama", "podcast", "popcast", "episode", "lecture", "sermon", "interview",
+  "radio show", "radio program", "radio programme", "radio broadcast", "radio transmission", "aircheck",
+  "film review", "movie review", "аудиокнига", "аудиокниги", "аудиоспектакль", "радиоспектакль", "радиопостановка",
   "читает", "читают", "чтение вслух", "лекция", "интервью",
 ].map(normalizeSearchText);
 
@@ -210,13 +211,14 @@ interface Doc {
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? ""));
 
-function toAlbum(d: Doc, match?: AlbumSearchMatch): Album {
+function toAlbum(d: Doc, match?: AlbumSearchMatch, verifiedFiles?: Pick<Album, "trackCount" | "cover">): Album {
   return {
     id: d.identifier,
     title: fixText(one(d.title)) || d.identifier,
     creator: fixText(one(d.creator)),
     year: d.year ? String(d.year) : "",
     downloads: Number(d.downloads) || 0,
+    ...(verifiedFiles ?? {}),
     ...(match ? { match } : {}),
   };
 }
@@ -275,6 +277,7 @@ function artistCreatorMatch(value: string, variants: string[]): boolean {
 interface SearchHit {
   doc: Doc;
   match: AlbumSearchMatch;
+  verifiedFiles?: Pick<Album, "trackCount" | "cover">;
 }
 
 interface SearchQuery {
@@ -311,7 +314,11 @@ function hasSpokenWordCollection(doc: Doc): boolean {
   );
 }
 
-/** Filters book readings and talk recordings that Archive also indexes as mediatype:audio. */
+function hasBroadcastCollection(doc: Doc): boolean {
+  return artistCollectionTokens(doc).some((name) => name.startsWith("radio") || name.startsWith("aircheck"));
+}
+
+/** Filters book readings, talk recordings and radio programmes that Archive also indexes as mediatype:audio. */
 function isSpokenWordArchiveItem(doc: Doc): boolean {
   if (hasSpokenWordCollection(doc)) return true;
   const metadata = ` ${normalizeSearchText(`${one(doc.title)} ${one(doc.subject)} ${one(doc.creator)}`)} `;
@@ -319,8 +326,8 @@ function isSpokenWordArchiveItem(doc: Doc): boolean {
 }
 
 function isNoisyArtistSource(doc: Doc): boolean {
-  // Jamendo imports contain many covers; book and speech collections are never artist-album results.
-  return artistCollectionTokens(doc).includes("jamendoalbums") || isSpokenWordArchiveItem(doc);
+  // Jamendo imports contain many covers; broadcasts and spoken-word collections are not artist-album results.
+  return artistCollectionTokens(doc).includes("jamendoalbums") || hasBroadcastCollection(doc) || isSpokenWordArchiveItem(doc);
 }
 
 function artistFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
@@ -331,7 +338,28 @@ function artistFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | unde
 
 function titleFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
   if (isNoisyArtistSource(doc)) return undefined;
-  return variants.some((variant) => hasPhrase(one(doc.title), normalizeSearchText(variant))) ? "title" : undefined;
+  const title = normalizeSearchText(one(doc.title));
+  const artistPrefixMatches = variants.some((variant) => {
+    const phrase = normalizeSearchText(variant);
+    if (!phrase) return false;
+    const creatorMissingForSelfTitle = title === phrase && !one(doc.creator).trim() && hasPhrase(one(doc.subject), phrase);
+    return creatorMissingForSelfTitle || title.startsWith(`${phrase} `) || title.startsWith(`the ${phrase} `);
+  });
+  return artistPrefixMatches ? "title" : undefined;
+}
+
+function isNoisyArtistSubjectRecord(doc: Doc): boolean {
+  if (isNoisyArtistSource(doc)) return true;
+  const context = `${one(doc.title)} ${one(doc.creator)} ${one(doc.subject)} ${one(doc.collection)}`;
+  const radioLikeCreator = normalizeSearchText(one(doc.creator)).split(" ").some((token) => token === "radio" || (token.length > 5 && token.endsWith("radio")));
+  const numberedEpisode = /\b(?:ep|episode)\.?\s*\d+\b/i.test(`${one(doc.title)} ${doc.identifier}`);
+  return radioLikeCreator || numberedEpisode || ["radio", "program", "programme", "programming", "broadcast", "aircheck", "buergerfunk", "film review", "movie review"]
+    .some((marker) => hasPhrase(context, marker));
+}
+
+function subjectFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
+  if (isNoisyArtistSubjectRecord(doc)) return undefined;
+  return variants.some((variant) => hasPhrase(one(doc.subject), normalizeSearchText(variant))) ? "subject" : undefined;
 }
 
 function anyFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
@@ -405,7 +433,41 @@ async function collectSearchHits(
   return { hits: [...byId.values()], exhausted };
 }
 
-/** Exact phrase search: performer first, title fallback for incomplete IA creator metadata. */
+async function verifiedSubjectFiles(doc: Doc, variants: string[], signal?: AbortSignal): Promise<Pick<Album, "trackCount" | "cover"> | undefined> {
+  try {
+    const meta = await metadata(doc.identifier, signal);
+    const tracks = audioFiles(meta.files);
+    if (!tracks.length) return undefined;
+    const albumArtistMatches = variants.some((variant) => hasPhrase(meta.creator, normalizeSearchText(variant)));
+    const trackArtistMatches = tracks.map((file) => variants.some((variant) =>
+      [file.name, file.title ?? "", file.creator ?? ""].some((value) => hasPhrase(value, normalizeSearchText(variant))),
+    ));
+    // A subject tag may point to a compilation or a cover. Accept it only if the album metadata
+    // names the performer, or every audio track independently does; a single hit in a mix is noise.
+    if (!albumArtistMatches && !trackArtistMatches.every(Boolean)) return undefined;
+    return { trackCount: tracks.length, cover: imageUrl(doc.identifier, meta.files) };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    return undefined;
+  }
+}
+
+async function verifySubjectHits(hits: SearchHit[], variants: string[], signal?: AbortSignal): Promise<SearchHit[]> {
+  const candidates = hits.filter((hit) => hit.match === "subject");
+  const verified: SearchHit[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < candidates.length) {
+      const hit = candidates[next++];
+      const files = await verifiedSubjectFiles(hit.doc, variants, signal);
+      if (files) verified.push({ ...hit, verifiedFiles: files });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, worker));
+  return [...hits.filter((hit) => hit.match !== "subject"), ...verified];
+}
+
+/** Exact phrase search: performer first, then artist-led titles and subject tags when metadata is sparse. */
 export async function searchTextAlbums(text: string, scope: AlbumSearchScope, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
   const variants = searchVariants(text);
   if (!variants.length) return { albums: [], hasMore: false };
@@ -432,6 +494,19 @@ export async function searchTextAlbums(text: string, scope: AlbumSearchScope, pa
       const titles = await collectSearchHits(titleQueries, needed, signal, performers.hits);
       collected = { hits: titles.hits, exhausted: performers.exhausted && titles.exhausted };
     }
+
+    // Some IA uploads omit both creator and artist-led title metadata but retain the performer as
+    // a subject tag. Add those only after better matches, filter radio/talk collections, and keep
+    // them visibly labelled as subject matches so they cannot outrank actual artist releases.
+    if (!shortNameAlreadyMatched && collected.hits.length < needed && collected.exhausted) {
+      const subjectQueries = variants.map((variant) => ({
+        query: phraseQuery([variant], ["subject"]),
+        match: (doc: Doc) => subjectFieldMatch(doc, [variant]),
+      }));
+      const subjects = await collectSearchHits(subjectQueries, needed, signal, collected.hits);
+      const verified = await verifySubjectHits(subjects.hits, variants, signal);
+      collected = { hits: verified, exhausted: collected.exhausted && subjects.exhausted };
+    }
   } else {
     const allFields: SearchQuery = {
       query: phraseQuery(variants, ["creator", "title", "subject"]),
@@ -443,7 +518,7 @@ export async function searchTextAlbums(text: string, scope: AlbumSearchScope, pa
   const ranked = sortSearchHits(collected.hits);
   const start = (page - 1) * SEARCH_PAGE_SIZE;
   return {
-    albums: ranked.slice(start, start + SEARCH_PAGE_SIZE).map(({ doc, match }) => toAlbum(doc, match)),
+    albums: ranked.slice(start, start + SEARCH_PAGE_SIZE).map(({ doc, match, verifiedFiles }) => toAlbum(doc, match, verifiedFiles)),
     hasMore: ranked.length > start + SEARCH_PAGE_SIZE || !collected.exhausted,
   };
 }
@@ -485,13 +560,26 @@ function audioFormat(file: FileRow): AudioFormat | null {
   return null;
 }
 
-function directTrackKey(file: FileRow): string {
+interface DirectTrackKey {
+  folder: string;
+  trackNumber?: number;
+  names: string[];
+}
+
+function directTrackKey(file: FileRow): DirectTrackKey {
   const folder = file.name.includes("/") ? file.name.slice(0, file.name.lastIndexOf("/")) : "";
-  const trackNumber = Number.parseInt(file.track ?? "", 10);
-  if (Number.isFinite(trackNumber)) return `${folder}|track:${trackNumber}`;
-  const title = cleanTitle(file.title || file.name.split("/").pop() || file.name)
+  const parsedTrack = Number.parseInt(file.track ?? "", 10);
+  const filename = (file.name.split("/").pop() || file.name).replace(/\.[^.]+$/, "");
+  const normalize = (value: string) => cleanTitle(value)
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  return `${folder}|title:${title}`;
+  const names = [...new Set([file.title ? normalize(file.title) : "", normalize(filename)].filter(Boolean))];
+  return { folder, trackNumber: Number.isFinite(parsedTrack) ? parsedTrack : undefined, names };
+}
+
+function sameDirectTrack(a: DirectTrackKey, b: DirectTrackKey): boolean {
+  if (a.folder !== b.folder) return false;
+  if (a.trackNumber !== undefined && b.trackNumber !== undefined) return a.trackNumber === b.trackNumber;
+  return a.names.some((name) => b.names.includes(name));
 }
 
 function audioFiles(files: FileRow[]): FileRow[] {
@@ -502,15 +590,13 @@ function audioFiles(files: FileRow[]): FileRow[] {
     return [{ file, format }];
   }).sort((a, b) => a.format.priority - b.format.priority || a.file.name.localeCompare(b.file.name, undefined, { numeric: true }));
 
-  const selected = new Map<string, FileRow>();
+  const selected: { file: FileRow; key: DirectTrackKey }[] = [];
   for (const candidate of candidates) {
     const key = directTrackKey(candidate.file);
-    if (!key.endsWith("title:")) {
-      if (selected.has(key)) continue;
-    } else if (selected.has(key)) continue;
-    selected.set(key, candidate.file);
+    if (selected.some((item) => sameDirectTrack(item.key, key))) continue;
+    selected.push({ file: candidate.file, key });
   }
-  return [...selected.values()].sort((a, b) => {
+  return selected.map((item) => item.file).sort((a, b) => {
     const ta = parseInt(a.track ?? "", 10);
     const tb = parseInt(b.track ?? "", 10);
     if (isFinite(ta) && isFinite(tb) && ta !== tb) return ta - tb;
@@ -679,11 +765,11 @@ export async function albumTracks(
     return a.name.localeCompare(b.name, undefined, { numeric: true });
   });
 
-  const seen = new Set<string>();
+  const seen: DirectTrackKey[] = [];
   for (const [index, file] of pick.entries()) {
     const key = directTrackKey(file);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (seen.some((item) => sameDirectTrack(item, key))) continue;
+    seen.push(key);
     const catalogNumber = Number.parseInt(file.track ?? "", 10) || index + 1;
     const catalogTrack = catalog?.tracks.find((item) => item.number === catalogNumber) ?? catalog?.tracks[index];
     const title = fixText(file.title || catalogTrack?.title || cleanTitle(file.name.split("/").pop() || file.name));
