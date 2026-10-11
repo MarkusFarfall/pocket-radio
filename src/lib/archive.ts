@@ -43,13 +43,14 @@ export interface Collection {
   query: string;
   hue: number;
   glyph: string;
-  group: "russian" | "decades" | "world" | "instrumental" | "family";
+  group: "russian" | "decades" | "world" | "regional" | "instrumental" | "family";
 }
 
 export const COLLECTION_GROUPS = [
   { id: "russian", title: "На русском", desc: "Шансон, барды, эстрада и песни прошлых лет" },
-  { id: "decades", title: "Эпохи и десятилетия", desc: "Рок-н-ролл, свинг, диско и музыка 80-х" },
+  { id: "decades", title: "Эпохи и десятилетия", desc: "Рок-н-ролл, свинг, диско и музыка 80-х и 90-х" },
   { id: "world", title: "Музыка мира", desc: "Танго, босса-нова, фламенко и французская песня" },
+  { id: "regional", title: "Музыка регионов", desc: "Армянские, греческие, японские, корейские и итальянские традиции" },
   { id: "instrumental", title: "Инструментальная", desc: "Классика, пианино, эмбиент и саундтреки" },
   { id: "family", title: "Семья и праздники", desc: "Детские, зимние и военные песни" },
 ] as const;
@@ -94,6 +95,11 @@ export const COLLECTIONS: Collection[] = [
   { id: "soul60", group: "decades", title: "Соул 60-х", desc: "Винтажный соул, Motown и R&B", query: '(subject:soul OR subject:"rhythm and blues" OR subject:motown) AND date:[1955-01-01 TO 1969-12-31]', hue: 350, glyph: "disc" },
   { id: "disco70", group: "decades", title: "Диско 70-х", desc: "Диско, фанк и танцевальные хиты", query: '(subject:disco OR subject:funk) AND date:[1970-01-01 TO 1982-12-31]', hue: 300, glyph: "sparkles" },
   { id: "eighties", group: "decades", title: "80-е", desc: "Синтипоп, new wave и кассетная эпоха", query: '(subject:"1980s" OR subject:"new wave" OR subject:synthpop OR title:"80s")', hue: 265, glyph: "tape" },
+  { id: "hits90s", group: "decades", title: "Хиты 90-х", desc: "Популярные песни, танцевальные миксы и сборники 1990-х", query: '(title:"90s songs" OR title:"90s mix" OR title:"90s party hits" OR subject:"90s hits")', hue: 280, glyph: "sparkles" },
+  { id: "eurodance90s", group: "decades", title: "Евродэнс 90-х", desc: "Танцевальная поп-музыка и сборники евродэнса", query: '(title:"90s Eurodance" OR title:"Eurodance Anos 90" OR subject:"90s eurodance" OR title:"90s Disco Fever")', hue: 318, glyph: "audio" },
+  { id: "britpop90s", group: "decades", title: "Бритпоп 90-х", desc: "Британская гитарная сцена и альтернативный рок", query: '(subject:britpop OR title:britpop) AND (subject:"90s" OR subject:"1990s")', hue: 174, glyph: "guitar" },
+  { id: "grunge90s", group: "decades", title: "Гранж 90-х", desc: "Гранж и альтернативный гитарный рок", query: '(subject:grunge OR title:grunge) AND (subject:"90s" OR subject:"1990s")', hue: 183, glyph: "guitar" },
+  { id: "indie00s", group: "decades", title: "Инди 2000-х", desc: "Инди-рок и независимая музыка 2000-х", query: '(subject:indie OR subject:"indie rock") AND (subject:"2000s" OR subject:"00s")', hue: 230, glyph: "guitar" },
   { id: "blues", group: "decades", title: "Классический блюз", desc: "Блюз и госпел начала века", query: "(subject:blues OR subject:gospel) AND date:[1900-01-01 TO 1969-12-31]", hue: 235, glyph: "music" },
 
   { id: "bossa", group: "world", title: "Босса-нова", desc: "Бразильская босса-нова и самба", query: '(subject:"bossa nova" OR subject:samba)', hue: 145, glyph: "sun" },
@@ -101,6 +107,13 @@ export const COLLECTIONS: Collection[] = [
   { id: "flamenco", group: "world", title: "Фламенко", desc: "Испанская гитара и канте", query: '(subject:flamenco OR title:flamenco)', hue: 25, glyph: "guitar" },
   { id: "french", group: "world", title: "Французский шансон", desc: "Классическая французская песня", query: '(subject:"french chanson" OR subject:"chanson française" OR title:"french chanson")', hue: 220, glyph: "mic" },
   { id: "latin", group: "world", title: "Латинская музыка", desc: "Сальса, мамбо и кубинские ритмы", query: '(subject:salsa OR subject:mambo OR subject:"latin music" OR subject:cuban)', hue: 42, glyph: "party" },
+
+  { id: "armenian-chanson", group: "regional", title: "Армянский шансон", desc: "Армянский шансон, рабиз и кассетные сборники", query: '(title:"армянский шансон" OR title:"armenian chanson" OR subject:"armenian chanson" OR subject:rabiz OR title:rabiz)', hue: 12, glyph: "mic" },
+  { id: "armenian-folk", group: "regional", title: "Армянские народные песни", desc: "Комитас, народные ансамбли и армянская музыка", query: '(title:"armenian folk songs" OR subject:"armenian folk music" OR title:"armenian music")', hue: 36, glyph: "guitar" },
+  { id: "rebetiko", group: "regional", title: "Греческий ребетико", desc: "Греческая городская песня и бузуки", query: "subject:rebetiko", hue: 210, glyph: "music" },
+  { id: "citypop", group: "regional", title: "Японский city pop", desc: "Японская поп-музыка и софт-рок 1970–80-х", query: 'subject:"city pop"', hue: 290, glyph: "disc" },
+  { id: "korean-folk", group: "regional", title: "Корейские народные песни", desc: "Традиционные корейские песни и мелодии", query: '(title:"korean folk song" OR subject:"korean folk music")', hue: 340, glyph: "music2" },
+  { id: "italian-songs", group: "regional", title: "Итальянские песни", desc: "Классика итальянской песни и поп-музыки", query: '(title:"classic italian songs" OR subject:"italian songs" OR subject:"italian pop")', hue: 145, glyph: "sparkles" },
 
   { id: "classical", group: "instrumental", title: "Классика", desc: "Оркестры, камерная и фортепианная музыка", query: '(subject:"classical music" OR subject:classical OR subject:symphony)', hue: 280, glyph: "music2" },
   { id: "piano", group: "instrumental", title: "Фортепиано", desc: "Сольные записи и тихая музыка", query: '(subject:piano OR title:piano) AND NOT subject:"piano roll"', hue: 205, glyph: "piano" },

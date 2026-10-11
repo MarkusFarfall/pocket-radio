@@ -41,6 +41,46 @@ async function archiveDocs(
   return queries;
 }
 
+test("offline collections include Armenian chanson and well-scoped decade and regional music", async ({ page }) => {
+  const armenianChanson: ArchiveDoc = {
+    identifier: "armenian-chanson-fixture",
+    title: "Армянский шансон. Выпуск первый",
+    creator: "Various Artists",
+    downloads: 54,
+    collection: ["opensource_audio"],
+  };
+  const eurodance: ArchiveDoc = {
+    identifier: "90s-eurodance-fixture",
+    title: "VA 90s Eurodance (2013)",
+    creator: "Various Artists",
+    downloads: 120,
+    collection: ["hifidelity_potpourri"],
+  };
+  const queries = await archiveDocs(page, (query) => {
+    if (query.includes('title:"армянский шансон"')) return [armenianChanson];
+    if (query.includes('title:"90s Eurodance"')) return [eurodance];
+    return [];
+  });
+
+  await openCollections(page);
+  await expect(page.getByRole("button", { name: /Армянский шансон/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Хиты 90-х/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Евродэнс 90-х/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Греческий ребетико/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Японский city pop/ })).toBeVisible();
+
+  await page.getByRole("button", { name: /Армянский шансон/ }).click();
+  await expect(page.getByRole("heading", { name: "Армянский шансон" })).toBeVisible();
+  await expect(page.getByText("Армянский шансон. Выпуск первый", { exact: true })).toBeVisible();
+  expect(queries.some((query) => query.includes('title:"армянский шансон"'))).toBe(true);
+
+  await page.getByRole("button", { name: "Коллекции", exact: true }).click();
+  await page.getByRole("button", { name: /Евродэнс 90-х/ }).click();
+  await expect(page.getByRole("heading", { name: "Евродэнс 90-х" })).toBeVisible();
+  await expect(page.getByText("VA 90s Eurodance (2013)", { exact: true })).toBeVisible();
+  expect(queries.some((query) => query.includes('title:"90s Eurodance"'))).toBe(true);
+});
+
 test("offline music search keeps the familiar layout and finds Russian genre names", async ({ page }) => {
   const queries = await archiveDocs(page, (query) => {
     if (query.includes("subject:rock")) return [
