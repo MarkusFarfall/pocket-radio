@@ -3,8 +3,8 @@
 Интернет-радио в кармане: свои потоки, готовые подборки, поиск станций, подкасты,
 плейлисты, статистика прослушивания и работа офлайн. PWA — ставится на телефон.
 
-Исходники пришли из релиза [`Lider` / Pocket Radio](https://github.com/MarkusFarfall/apps/releases/tag/Lider)
-(`pocket-radio-sonnet.zip`).
+Исходники пришли из релиза `Lider` старого монорепозитория `MarkusFarfall/apps`
+(`pocket-radio-sonnet.zip`); с октября 2026 — самостоятельный репозиторий, история сохранена.
 
 **Стек:** Vite 7 · React 19 · TypeScript 5.9 · Tailwind CSS 4 · Dexie (IndexedDB) ·
 Supabase Auth (REST без SDK).
@@ -15,7 +15,7 @@ Supabase Auth (REST без SDK).
 
 **Живая версия:** https://pocket-radio-iota.vercel.app
 
-Прод: проект Vercel `pocket-radio`, **Root Directory** = `projects/pocket-radio`,
+Прод: проект Vercel `pocket-radio`, корень репозитория,
 пуш в `main` деплоится автоматически.
 
 Поиск Radio Garden обращается к его неофициальному API через same-origin-функцию
@@ -46,7 +46,7 @@ iTunes используется только при точном совпаде�
 ## Разработка
 
 ```bash
-cd projects/pocket-radio
+cd pocket-radio
 npm ci
 cp .env.example .env.local   # рекомендуем: локальный auth по умолчанию
 npm run dev                  # http://localhost:5173
@@ -117,7 +117,4 @@ supabase/
 Production сохраняет подключение к стандартному Pocket Radio Supabase; установите
 `VITE_AUTH_PROVIDER=local`, чтобы отключить облачный auth.
 
----
 
-Выделено из монорепозитория [MarkusFarfall/apps](https://github.com/MarkusFarfall/apps) (коммит 46863ca):
-полная история папки сохранена через git filter-repo.
