@@ -4,7 +4,7 @@
  *  - same-origin статика:   StaleWhileRevalidate;
  *  - аудио и кросс-доменные потоки: НЕ перехватываются (идут напрямую, в т.ч. LAN).
  * Каталог, избранное и статистика лежат в IndexedDB и от SW не зависят. */
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = "radio-shell-" + VERSION;
 const AUDIO_CACHE = "radio-audio-v1";
 const IMG_CACHE = "radio-img-v1";
