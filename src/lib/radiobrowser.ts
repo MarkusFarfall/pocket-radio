@@ -316,6 +316,10 @@ function mapStation(s: RbStation, url: string): Found {
     .slice(0, 6);
   const { genre, mood } = guessGenre(tagList.join(" ") + " " + s.name);
   const favicon = (s.favicon || "").trim();
+  // Берём http/https-фавикон (http апгрейдим в https — хосты фавиконов почти всегда
+  // отдают по обоим протоколам). .ico/.svg тоже принимаем: слишком мелкие/битые отсечёт
+  // Cover по naturalWidth<48 и покажет генерируемую обложку. Пустой favicon -> undefined.
+  const logoUrl = /^https?:\/\//i.test(favicon) ? favicon.replace(/^http:\/\//i, "https://") : undefined;
   const isHls = s.hls === 1 || /\.m3u8(\?|$)/i.test(url);
   const place = [s.state, countryName(s.countrycode, s.country)].filter(Boolean);
   return {
@@ -328,7 +332,7 @@ function mapStation(s: RbStation, url: string): Found {
     city: place.slice(0, 2).join(", "),
     tags: tagList.slice(0, 4),
     icon: "",
-    logo: /^https:\/\//i.test(favicon) && !/\.(ico|svg)(\?|$)/i.test(favicon) ? favicon : undefined,
+    logo: logoUrl,
     note: `Из каталога Radio Browser · ${s.codec || "?"}${s.bitrate ? ` ${s.bitrate} кбит/с` : ""}`,
     bitrate: s.bitrate > 0 && s.bitrate <= 512 ? s.bitrate : isHls ? 96 : 128,
     votes: s.votes,
