@@ -116,3 +116,8 @@ supabase/
 В dev-режиме Supabase не вызывается без явного `VITE_AUTH_PROVIDER=supabase`.
 Production сохраняет подключение к стандартному Pocket Radio Supabase; установите
 `VITE_AUTH_PROVIDER=local`, чтобы отключить облачный auth.
+
+---
+
+Выделено из монорепозитория [MarkusFarfall/apps](https://github.com/MarkusFarfall/apps) (коммит 46863ca):
+полная история папки сохранена через git filter-repo.
