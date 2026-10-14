@@ -127,6 +127,33 @@ test("equalizer processes a local offline track and allows instant A/B compariso
   await expect(panel.getByRole("button", { name: "Вернуть EQ" })).toHaveAttribute("aria-pressed", "true");
   await panel.getByRole("button", { name: "Вернуть EQ" }).click();
   await expect(panel.getByRole("button", { name: "Сравнить без EQ" })).toHaveAttribute("aria-pressed", "false");
+
+  // Regression: editing a playing source must not get stuck in "checking".
+  await panel.getByRole("button", { name: "Больше баса", exact: true }).click();
+  await expect(panel.locator('p[role="status"]')).toContainText("Эквалайзер применяется");
+  await expect(compare).toBeEnabled();
+  await compare.click();
+  await expect(panel.getByTestId("eq-comparison-status")).toContainText("Поправка зафиксирована");
+  await expect(panel.locator('p[role="status"]')).toContainText("Слушаете оригинал");
+  const band = panel.getByRole("slider", { name: "Полоса 62 Гц" });
+  await band.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(panel.locator('p[role="status"]')).toContainText("Эквалайзер применяется");
+  await expect(compare).toHaveAttribute("aria-pressed", "false");
+  await expect(compare).toBeEnabled();
+  await compare.click();
+  await panel.getByRole("button", { name: "Завершить A/B" }).click();
+  await expect(compare).toHaveAttribute("aria-pressed", "false");
+  await expect(panel.getByRole("button", { name: "Завершить A/B" })).toHaveCount(0);
+
+  await panel.getByRole("switch", { name: "Включить эквалайзер" }).click();
+  await expect(panel.locator('p[role="status"]')).toContainText("Эквалайзер выключен");
+  await panel.getByRole("switch", { name: "Включить эквалайзер" }).click();
+  await expect(panel.locator('p[role="status"]')).toContainText("Эквалайзер применяется");
+  await panel.getByRole("switch", { name: "Согласовать уровень A/B" }).click();
+  await expect(compare).toBeEnabled();
+  await compare.click();
+  await expect(panel.locator('p[role="status"]')).toContainText("Выравнивание уровня отключено");
 });
 
 test("a stream without CORS keeps playing natively when EQ processing is unavailable", async ({ page }) => {
@@ -160,6 +187,9 @@ test("a stream without CORS keeps playing natively when EQ processing is unavail
     const panel = page.getByRole("dialog").last();
     await expect(panel.locator('p[role="status"]')).toContainText("Этот поток не разрешает обработку звука", { timeout: 12_000 });
     await expect(page.getByRole("button", { name: "Пауза" }).first()).toBeVisible();
+    await panel.getByRole("button", { name: "Больше баса", exact: true }).click();
+    await expect(panel.locator('p[role="status"]')).toContainText("Этот поток не разрешает обработку звука");
+    await expect(panel.getByRole("button", { name: "Сравнить без EQ" })).toBeDisabled();
   } finally {
     await new Promise<void>((resolve, reject) => mediaServer.close((error) => error ? reject(error) : resolve()));
   }

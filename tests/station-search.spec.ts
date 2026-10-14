@@ -58,7 +58,10 @@ test("station categories are Russian and category filters remain combined with s
     if (url.pathname.endsWith("/search")) {
       stationQueries.push(url);
       const name = url.searchParams.get("name") ?? "";
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(name.toLowerCase().includes("no match") ? [] : [station]) });
+      // The client also searches transliterations. Do not return Jazz FM for
+      // every non-English query (e.g. the Cyrillic variant of "No Match Radio").
+      const matchesFixture = !name || /jazz|йазз/i.test(name);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(matchesFixture ? [station] : []) });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });

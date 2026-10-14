@@ -39,6 +39,8 @@ export interface EqualizerSettings {
   gainsDb: number[];
   preampDb: number;
   autoHeadroom: boolean;
+  /** Match measured RMS for A/B, using attenuation only; never continuous AGC. */
+  matchLevel: boolean;
   savedPresets: SavedEqualizerPreset[];
 }
 
@@ -63,6 +65,7 @@ export function defaultEqualizerSettings(): EqualizerSettings {
     gainsDb: zeros(),
     preampDb: 0,
     autoHeadroom: true,
+    matchLevel: true,
     savedPresets: [],
   };
 }
@@ -116,6 +119,7 @@ export function normalizeEqualizerSettings(value: unknown): EqualizerSettings {
     gainsDb,
     preampDb: typeof value.preampDb === "number" ? clamp(value.preampDb, EQUALIZER_PREAMP_MIN_DB, EQUALIZER_PREAMP_MAX_DB) : 0,
     autoHeadroom: value.autoHeadroom !== false,
+    matchLevel: value.matchLevel !== false,
     savedPresets,
   };
 }
@@ -192,90 +196,223 @@ export function deleteEqualizerPreset(settings: EqualizerSettings, id: string): 
     : { ...settings, savedPresets };
 }
 
+export interface EqualizerComparison {
+  ready: boolean;
+  locked: boolean;
+  dryDb: number;
+  wetDb: number;
+}
+
+export const emptyEqualizerComparison = (): EqualizerComparison => ({ ready: false, locked: false, dryDb: 0, wetDb: 0 });
+
+/** Both coefficients are <= 1: the louder branch is attenuated, never boosted. */
+export function comparisonGains(dryPower: number, wetPower: number): { dry: number; wet: number } | null {
+  if (!Number.isFinite(dryPower) || !Number.isFinite(wetPower) || dryPower < 1e-9 || wetPower < 1e-9) return null;
+  const ratio = Math.sqrt(wetPower / dryPower);
+  return { dry: Math.min(1, ratio), wet: Math.min(1, 1 / ratio) };
+}
+
+export function equalizerHeadroomDb(peakDb: number, preampDb: number, automatic: boolean): number {
+  // Keep Flat/0 exactly unity. Include positive preamp, not just band boosts.
+  const totalPeak = peakDb + preampDb;
+  return preampDb - (automatic && totalPeak > 1e-6 ? totalPeak + 0.8 : 0);
+}
+
+type EqContext = AudioContext | OfflineAudioContext;
 export interface EqualizerGraph {
   filters: BiquadFilterNode[];
-  /** Unconnected mirrors allow precise headroom calculation without audible parameter jumps. */
   responseFilters: BiquadFilterNode[];
   bypassGain: GainNode;
   processedGain: GainNode;
+  dryMatchGain: GainNode;
+  wetMatchGain: GainNode;
   headroomGain: GainNode;
   outputGain: GainNode;
+  /** Nothing is sent to the destination until the safety processor is ready. */
+  ready: Promise<void>;
+  processor: AudioWorkletNode | null;
+  failed: boolean;
+  comparison: EqualizerComparison;
+  onComparisonChange?: (comparison: EqualizerComparison) => void;
+  onFailure?: () => void;
+  powers: { dry: number; wet: number } | null;
+  revision: number;
+  signature: string;
+  dispose(): void;
 }
 
-/** Two parallel paths make A/B comparison instant and keep the unprocessed path available. */
-export function createEqualizerGraph(context: AudioContext, input: AudioNode, destination: AudioNode): EqualizerGraph {
+const workletLoads = new WeakMap<BaseAudioContext, Promise<void>>();
+function loadOutputProcessor(context: EqContext): Promise<void> {
+  let promise = workletLoads.get(context);
+  if (!promise) {
+    // Vite emits this local JS asset with a content hash; no CDN/blob/CSP exception.
+    let timer: ReturnType<typeof setTimeout>;
+    promise = Promise.race([
+      context.audioWorklet.addModule(new URL('./equalizer-processor.worklet.js', import.meta.url).href),
+      new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('EQ processor load timed out')), 8_000); }),
+    ]).finally(() => clearTimeout(timer));
+    workletLoads.set(context, promise);
+  }
+  return promise;
+}
+
+function publishComparison(graph: EqualizerGraph, next: EqualizerComparison) {
+  const old = graph.comparison;
+  if (old.ready === next.ready && old.locked === next.locked && old.dryDb === next.dryDb && old.wetDb === next.wetDb) return;
+  graph.comparison = next;
+  graph.onComparisonChange?.(next);
+}
+
+/** Invalidates old-source/old-curve measurements, including queued port messages. */
+export function resetEqualizerComparison(graph: EqualizerGraph): void {
+  graph.revision = (graph.revision + 1) % 1_000_000;
+  graph.powers = null;
+  graph.processor?.parameters.get('revision')?.setValueAtTime(graph.revision, graph.processor.context.currentTime);
+  publishComparison(graph, emptyEqualizerComparison());
+}
+
+export function createEqualizerGraph(context: EqContext, input: AudioNode, destination: AudioNode): EqualizerGraph {
+  if (!context.audioWorklet) throw new Error('Безопасная обработка EQ требует AudioWorklet');
   const bypassGain = context.createGain();
   const processedGain = context.createGain();
+  const dryMatchGain = context.createGain();
+  const wetMatchGain = context.createGain();
   const headroomGain = context.createGain();
   const outputGain = context.createGain();
   const makeFilter = ({ hz }: (typeof EQUALIZER_BANDS)[number], index: number) => {
     const filter = context.createBiquadFilter();
-    filter.type = index === 0 ? "lowshelf" : index === EQUALIZER_BANDS.length - 1 ? "highshelf" : "peaking";
+    filter.type = index === 0 ? 'lowshelf' : index === EQUALIZER_BANDS.length - 1 ? 'highshelf' : 'peaking';
     filter.frequency.value = Math.min(hz, context.sampleRate * 0.46);
-    if (filter.type === "peaking") filter.Q.value = 1.4;
+    if (filter.type === 'peaking') filter.Q.value = 1.4;
     filter.gain.value = 0;
     return filter;
   };
   const filters = EQUALIZER_BANDS.map(makeFilter);
   const responseFilters = EQUALIZER_BANDS.map(makeFilter);
-
-  input.connect(bypassGain);
+  input.connect(dryMatchGain);
+  dryMatchGain.connect(bypassGain);
   bypassGain.connect(outputGain);
   input.connect(filters[0]);
   for (let i = 0; i < filters.length - 1; i++) filters[i].connect(filters[i + 1]);
   filters[filters.length - 1].connect(headroomGain);
-  headroomGain.connect(processedGain);
+  headroomGain.connect(wetMatchGain);
+  wetMatchGain.connect(processedGain);
   processedGain.connect(outputGain);
-  outputGain.connect(destination);
   bypassGain.gain.value = 1;
   processedGain.gain.value = 0;
-  headroomGain.gain.value = 1;
-  outputGain.gain.value = 1;
-  return { filters, responseFilters, bypassGain, processedGain, headroomGain, outputGain };
+  let disposed = false;
+  const graph: EqualizerGraph = {
+    filters, responseFilters, bypassGain, processedGain, dryMatchGain, wetMatchGain, headroomGain, outputGain,
+    ready: Promise.resolve(), processor: null, failed: false, comparison: emptyEqualizerComparison(), powers: null, revision: 0, signature: '',
+    dispose() {
+      disposed = true;
+      for (const node of [dryMatchGain, filters[0], graph.processor]) {
+        if (node) { try { input.disconnect(node); } catch { /* already detached */ } }
+      }
+      [...filters, bypassGain, processedGain, dryMatchGain, wetMatchGain, headroomGain, outputGain].forEach((node) => node.disconnect());
+      graph.processor?.disconnect();
+      graph.processor?.port.close();
+    },
+  };
+  graph.ready = loadOutputProcessor(context).then(() => {
+    if (disposed) throw new Error('EQ graph was disposed');
+    const processor = new AudioWorkletNode(context, 'pocket-equalizer-output-v1', {
+      numberOfInputs: 3, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit',
+    });
+    graph.processor = processor;
+    processor.onprocessorerror = () => { graph.failed = true; graph.onFailure?.(); };
+    processor.port.onmessage = ({ data }: MessageEvent<{ revision: number; complete: boolean; dryPower: number; wetPower: number }>) => {
+      if (disposed || data.revision !== graph.revision || graph.comparison.locked) return;
+      const gains = data.complete ? comparisonGains(data.dryPower, data.wetPower) : null;
+      graph.powers = gains ? { dry: data.dryPower, wet: data.wetPower } : null;
+      publishComparison(graph, { ready: !!gains, locked: false, dryDb: 0, wetDb: 0 });
+    };
+    processor.parameters.get('revision')!.value = graph.revision;
+    outputGain.connect(processor, 0, 0);
+    input.connect(processor, 0, 1);
+    headroomGain.connect(processor, 0, 2);
+    processor.connect(destination);
+  });
+  // Callers await the original promise; prevent an unhandled rejection before attach().
+  void graph.ready.catch(() => { graph.failed = true; });
+  return graph;
 }
 
-function smooth(param: AudioParam, value: number, context: AudioContext) {
-  try {
-    param.cancelScheduledValues(context.currentTime);
-    param.setTargetAtTime(value, context.currentTime, 0.025);
-  } catch {
-    param.value = value;
+function hold(param: AudioParam, at: number) {
+  if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(at);
+  else {
+    const value = param.value;
+    param.cancelScheduledValues(at);
+    param.setValueAtTime(value, at);
   }
 }
+function ramp(param: AudioParam, value: number, context: EqContext, seconds = 0.025) {
+  hold(param, context.currentTime);
+  param.linearRampToValueAtTime(value, context.currentTime + seconds);
+}
 
-function peakResponseDb(filters: BiquadFilterNode[], context: AudioContext): number {
-  const count = 512;
-  const upper = Math.max(40, Math.min(20_000, context.sampleRate * 0.46));
+function peakResponseDb(filters: BiquadFilterNode[], context: EqContext): number {
+  const count = 1024;
+  const upper = context.sampleRate / 2;
   const frequencies = new Float32Array(count);
   const magnitudes = new Float32Array(count);
   const phases = new Float32Array(count);
-  for (let i = 0; i < count; i++) frequencies[i] = 20 * (upper / 20) ** (i / (count - 1));
+  // Include DC and Nyquist: shelf maxima can be outside 20 Hz .. 20 kHz.
+  frequencies[0] = 0;
+  for (let i = 1; i < count; i++) frequencies[i] = 10 * (upper / 10) ** ((i - 1) / (count - 2));
   const totalDb = new Float32Array(count);
   for (const filter of filters) {
     filter.getFrequencyResponse(frequencies, magnitudes, phases);
     for (let i = 0; i < count; i++) totalDb[i] += 20 * Math.log10(Math.max(magnitudes[i], 0.000001));
   }
-  let peak = 0;
-  for (const db of totalDb) peak = Math.max(peak, db);
-  return peak;
+  let peak = -Infinity;
+  for (const db of totalDb) if (Number.isFinite(db)) peak = Math.max(peak, db);
+  return Number.isFinite(peak) ? peak : 0;
 }
 
 export function applyEqualizerGraph(
   graph: EqualizerGraph,
-  context: AudioContext,
+  context: EqContext,
   settings: EqualizerSettings,
   bypass = false,
   outputVolume = 1,
 ): void {
-  const active = settings.enabled && !bypass;
-  const gains = active ? settings.gainsDb : zeros();
-  graph.responseFilters.forEach((filter, index) => { filter.gain.value = gains[index] ?? 0; });
-  graph.filters.forEach((filter, index) => smooth(filter.gain, gains[index] ?? 0, context));
-  const peak = active && settings.autoHeadroom ? peakResponseDb(graph.responseFilters, context) : 0;
-  const reserveDb = peak > 0.25 ? peak + 0.8 : 0;
-  const preampDb = active ? settings.preampDb - reserveDb : 0;
-  smooth(graph.headroomGain.gain, 10 ** (preampDb / 20), context);
-  smooth(graph.bypassGain.gain, active ? 0 : 1, context);
-  smooth(graph.processedGain.gain, active ? 1 : 0, context);
-  smooth(graph.outputGain.gain, Math.max(0, Math.min(1, outputVolume)), context);
+  const signature = JSON.stringify([settings.enabled, settings.gainsDb, settings.preampDb, settings.autoHeadroom, settings.matchLevel]);
+  if (signature !== graph.signature) {
+    graph.signature = signature;
+    resetEqualizerComparison(graph);
+    // Keep the processed branch alive, even in bypass: no filter morph during A/B.
+    graph.responseFilters.forEach((filter, index) => { filter.gain.value = settings.gainsDb[index] ?? 0; });
+    const peak = peakResponseDb(graph.responseFilters, context);
+    const gain = 10 ** (equalizerHeadroomDb(peak, settings.preampDb, settings.autoHeadroom) / 20);
+    // Attenuate first, then change coefficients, then release to the final gain.
+    // The audio-thread protector also covers rapid edits and filter transients.
+    const now = context.currentTime;
+    const guard = Math.min(graph.headroomGain.gain.value, gain);
+    hold(graph.headroomGain.gain, now);
+    graph.headroomGain.gain.linearRampToValueAtTime(guard, now + 0.005);
+    graph.headroomGain.gain.setValueAtTime(guard, now + 0.04);
+    graph.headroomGain.gain.linearRampToValueAtTime(gain, now + 0.15);
+    graph.filters.forEach((filter, index) => {
+      hold(filter.gain, now);
+      filter.gain.setValueAtTime(filter.gain.value, now + 0.005);
+      filter.gain.linearRampToValueAtTime(settings.gainsDb[index] ?? 0, now + 0.03);
+    });
+  }
+  if (settings.enabled && settings.matchLevel && bypass && !graph.comparison.locked && graph.powers) {
+    const gains = comparisonGains(graph.powers.dry, graph.powers.wet);
+    if (gains) publishComparison(graph, { ready: true, locked: true, dryDb: 20 * Math.log10(gains.dry), wetDb: 20 * Math.log10(gains.wet) });
+  }
+  const matched = settings.enabled && settings.matchLevel && graph.comparison.locked;
+  const dryGain = matched ? 10 ** (graph.comparison.dryDb / 20) : 1;
+  const wetGain = matched ? 10 ** (graph.comparison.wetDb / 20) : 1;
+  // If there is no reliable measurement, do not silently offer an unmatched A/B.
+  const comparing = bypass && (!settings.matchLevel || matched);
+  const active = settings.enabled && !comparing;
+  ramp(graph.dryMatchGain.gain, dryGain, context);
+  ramp(graph.wetMatchGain.gain, wetGain, context);
+  // Linear (not equal-power) crossfade: correlated dry/wet must not get a +3 dB boost.
+  ramp(graph.bypassGain.gain, active ? 0 : 1, context);
+  ramp(graph.processedGain.gain, active ? 1 : 0, context);
+  ramp(graph.outputGain.gain, Math.max(0, Math.min(1, outputVolume)), context);
 }

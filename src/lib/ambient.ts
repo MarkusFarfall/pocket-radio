@@ -3,7 +3,7 @@
  * Сцены подбираются по жанру и настроению станции, к которой пропала связь.
  */
 
-import { applyEqualizerGraph, createEqualizerGraph, defaultEqualizerSettings, type EqualizerGraph, type EqualizerSettings } from "./equalizer";
+import { emptyEqualizerComparison, resetEqualizerComparison, applyEqualizerGraph, createEqualizerGraph, defaultEqualizerSettings, type EqualizerGraph, type EqualizerSettings } from "./equalizer";
 
 export type SceneId = "drift" | "lofi" | "lounge" | "pulse" | "piano" | "rain" | "waves";
 
@@ -527,6 +527,19 @@ class AmbientEngine {
   private eqSettings: EqualizerSettings = defaultEqualizerSettings();
   private eqBypass = false;
   private gen = 0;
+  onEqualizerChange?: () => void;
+
+  get equalizerAvailability(): "idle" | "checking" | "available" | "unsupported" {
+    if (!this.ac) return "idle";
+    if (!this.eqGraph || this.eqGraph.failed) return "unsupported";
+    return this.eqGraph.processor ? "available" : "checking";
+  }
+  get equalizerComparison() { return this.eqGraph?.comparison ?? emptyEqualizerComparison(); }
+  endEqualizerComparison() {
+    this.eqBypass = false;
+    if (this.eqGraph) resetEqualizerComparison(this.eqGraph);
+    this.applyEqualizer();
+  }
 
   get scene(): SceneId | null {
     return this.current;
@@ -549,7 +562,23 @@ class AmbientEngine {
     comp.release.value = 0.3;
     const master = ac.createGain();
     master.gain.value = this.volume;
-    this.eqGraph = createEqualizerGraph(ac, master, comp);
+    try {
+      const graph = createEqualizerGraph(ac, master, comp);
+      this.eqGraph = graph;
+      graph.onComparisonChange = () => this.onEqualizerChange?.();
+      const fallback = () => {
+        if (this.eqGraph !== graph) return;
+        graph.dispose();
+        this.eqGraph = null;
+        master.connect(comp);
+        this.onEqualizerChange?.();
+      };
+      graph.onFailure = fallback;
+      void graph.ready.then(() => this.onEqualizerChange?.(), fallback);
+    } catch {
+      // Worklet unsupported: preserve ambient audio through its existing compressor.
+      master.connect(comp);
+    }
     comp.connect(ac.destination);
     this.ac = ac;
     this.master = master;
@@ -577,7 +606,13 @@ class AmbientEngine {
   prime() {
     try {
       const ac = this.ctx();
-      if (ac.state === "suspended") void ac.resume().catch(() => undefined);
+      void ac.resume().catch(() => undefined);
+      // Radio playback primes ambient too. Do not leave its worklet running
+      // indefinitely when no ambient scene was actually started.
+      if (!this.current && !this.idle) this.idle = window.setTimeout(() => {
+        this.idle = null;
+        if (!this.current) void ac.suspend().catch(() => undefined);
+      }, 2000);
     } catch {
       /* Web Audio недоступен — эмбиент просто не включится */
     }
@@ -589,9 +624,14 @@ class AmbientEngine {
   }
 
   async start(scene: SceneId, volume: number): Promise<void> {
-    const ac = this.ctx();
-    this.assets(ac);
     const my = ++this.gen;
+    const ac = this.ctx();
+    // Resume synchronously inside the user gesture, before awaiting module loading.
+    if (ac.state === "suspended") void ac.resume().catch(() => undefined);
+    await this.eqGraph?.ready.catch(() => undefined);
+    if (my !== this.gen) return;
+    this.endEqualizerComparison();
+    this.assets(ac);
     this.halt(0.35);
     if (this.idle) {
       clearTimeout(this.idle);

@@ -22,6 +22,9 @@ import {
   setEqualizerBand,
   setEqualizerPreamp,
   deleteEqualizerPreset,
+  resetEqualizerComparison,
+  emptyEqualizerComparison,
+  type EqualizerComparison,
   type EqualizerGraph,
   type EqualizerSettings,
 } from "./equalizer";
@@ -65,6 +68,7 @@ export interface PlayerState {
   equalizer: EqualizerSettings;
   equalizerAvailability: EqualizerAvailability;
   equalizerBypass: boolean;
+  equalizerComparison: EqualizerComparison;
   history: TrackEntry[];
   /** режим «нет интернета»: играет эмбиент или офлайн-станция вместо эфира */
   fallback: FallbackInfo | null;
@@ -154,6 +158,7 @@ class Engine {
       equalizer: loadEqualizerSettings(),
       equalizerAvailability: "idle",
       equalizerBypass: false,
+      equalizerComparison: emptyEqualizerComparison(),
       history: [],
       fallback: null,
       sourcePlaylistId: null,
@@ -166,6 +171,12 @@ class Engine {
     this.bindAudioEvents(this.eqAudio);
     this.applyAudioSettings(this.nativeAudio);
     ambient.setEqualizer(this.state.equalizer);
+    ambient.onEqualizerChange = () => {
+      if (this.state.fallback?.kind === "ambient") this.set({
+        equalizerAvailability: ambient.equalizerAvailability,
+        equalizerComparison: ambient.equalizerComparison,
+      });
+    };
     window.setInterval(() => this.flush(false), 10000);
     window.addEventListener("pagehide", this.onPageHide);
     window.addEventListener("pageshow", this.onPageShow);
@@ -232,8 +243,10 @@ class Engine {
 
   /** Create the graph only after a user gesture, and only on its isolated CORS-capable audio element. */
   private ensureEqualizerGraph(): boolean {
+    if (this.eqGraph?.failed) return false;
     if (this.eqGraph && this.eqContext) {
-      if (this.eqContext.state === "suspended") void this.eqContext.resume().catch(() => undefined);
+      // Queue resume even if a preceding suspend() has not resolved yet.
+      void this.eqContext.resume().catch(() => undefined);
       return true;
     }
     const w = window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
@@ -243,9 +256,17 @@ class Engine {
     try {
       context = new Ctor();
       this.eqAudio.crossOrigin = "anonymous";
+      if (!context.audioWorklet) throw new Error("AudioWorklet недоступен");
       const source = context.createMediaElementSource(this.eqAudio);
       this.eqGraph = createEqualizerGraph(context, source, context.destination);
       this.eqContext = context;
+      this.eqGraph.onComparisonChange = (comparison) => {
+        if (this.audio === this.eqAudio && this.state.fallback?.kind !== "ambient") this.set({ equalizerComparison: comparison });
+      };
+      this.eqGraph.onFailure = () => {
+        const station = this.state.station;
+        if (station && this.audio === this.eqAudio) void this.fallbackEqToNative(station, this.token, this.eqAudio.currentTime);
+      };
       this.applyEqualizerGraph();
       if (context.state === "suspended") void context.resume().catch(() => undefined);
       return true;
@@ -260,6 +281,7 @@ class Engine {
   private useAudioElement(audio: HTMLAudioElement) {
     this.audio = audio;
     this.applyAudioSettings(audio);
+    if (audio === this.nativeAudio) void this.eqContext?.suspend().catch(() => undefined);
   }
 
   private markHidden = () => {
@@ -468,6 +490,7 @@ class Engine {
       sourceContext,
       equalizerAvailability: useEq ? (eqReady ? "checking" : "unsupported") : "idle",
       equalizerBypass: false,
+      equalizerComparison: emptyEqualizerComparison(),
     });
     this.setTime({ position: station.resumePos ?? 0, duration: 0 });
     this.applyAudioSettings(this.audio);
@@ -522,7 +545,7 @@ class Engine {
     this.useAudioElement(this.nativeAudio);
     this.retries = 0;
     this.bufferSince = null;
-    this.set({ equalizerAvailability: "unavailable", equalizerBypass: false, status: resume ? "loading" : "paused", error: null });
+    this.set({ equalizerAvailability: "unavailable", equalizerBypass: false, equalizerComparison: emptyEqualizerComparison(), status: resume ? "loading" : "paused", error: null });
     this.setTime({ position: !this.state.isLive && Number.isFinite(resumePosition) ? resumePosition! : 0, duration: 0 });
     try {
       await this.attach(station, my, resumePosition);
@@ -589,6 +612,7 @@ class Engine {
 
   pause() {
     this.wantsPlayback = false;
+    if (this.audio === this.eqAudio) void this.eqContext?.suspend().catch(() => undefined);
     this.clearPlaylistRetry();
     this.hiddenWhilePlaying = false;
     if (!this.state.station) return;
@@ -619,6 +643,7 @@ class Engine {
       await this.play(st, this.state.queue, { sourcePlaylistId: this.state.sourcePlaylistId, sourceContext: this.state.sourceContext });
     } else {
       try {
+        if (this.audio === this.eqAudio) await this.eqContext?.resume();
         await this.audio.play();
       } catch {
         /* ignore */
@@ -654,6 +679,10 @@ class Engine {
       sourcePlaylistId: info.manual ? null : this.state.sourcePlaylistId,
       sourceContext: info.manual ? null : this.state.sourceContext,
     });
+    if (info.kind === "ambient") {
+      ambient.endEqualizerComparison();
+      this.set({ equalizerBypass: false, equalizerAvailability: ambient.equalizerAvailability, equalizerComparison: ambient.equalizerComparison });
+    }
     this.setTime({ position: 0, duration: 0 });
     this.updateMediaSession();
   }
@@ -666,6 +695,7 @@ class Engine {
 
   stop() {
     this.wantsPlayback = false;
+    void this.eqContext?.suspend().catch(() => undefined);
     this.clearPlaylistRetry();
     this.hiddenWhilePlaying = false;
     if (this.state.fallback) this.fallbackStop?.(false);
@@ -673,7 +703,7 @@ class Engine {
     void this.closeTrack();
     this.audio.pause();
     this.teardownSource();
-    this.set({ station: null, status: "idle", meta: null, error: null, fallback: null, sourcePlaylistId: null, sourceContext: null });
+    this.set({ station: null, status: "idle", meta: null, error: null, fallback: null, sourcePlaylistId: null, sourceContext: null, equalizerAvailability: "idle", equalizerBypass: false, equalizerComparison: emptyEqualizerComparison() });
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = "none";
@@ -763,11 +793,20 @@ class Engine {
     const enabling = !previous.enabled && next.enabled;
     const ambientActive = this.state.fallback?.kind === "ambient";
     const hasStation = !!this.state.station;
-    const graphReady = !next.enabled || !hasStation || ambientActive || this.ensureEqualizerGraph();
-    const bypass = next.enabled ? this.state.equalizerBypass : false;
-    const availability: EqualizerAvailability = !next.enabled
-      ? (this.audio === this.eqAudio ? "available" : "idle")
-      : ambientActive ? "available" : hasStation ? (graphReady ? "checking" : "unsupported") : "idle";
+    const graphReady = !next.enabled || !hasStation || ambientActive || (!!this.eqGraph && !this.eqGraph.failed) || this.ensureEqualizerGraph();
+    const processingChanged = previous.enabled !== next.enabled || previous.preampDb !== next.preampDb ||
+      previous.autoHeadroom !== next.autoHeadroom || previous.matchLevel !== next.matchLevel ||
+      previous.gainsDb.some((gain, index) => gain !== next.gainsDb[index]);
+    const bypass = next.enabled && !processingChanged ? this.state.equalizerBypass : false;
+    // Availability belongs to the SOURCE, not the preset. Do not wait for a new
+    // canplay/playing event when coefficients change on an already loaded element.
+    let availability = this.state.equalizerAvailability;
+    if (ambientActive) availability = ambient.equalizerAvailability;
+    else if (!hasStation) availability = "idle";
+    else if (next.enabled && !graphReady) availability = "unsupported";
+    else if (enabling && this.audio === this.nativeAudio && graphReady) availability = "checking";
+    else if (this.audio === this.eqAudio && this.eqAudio.readyState >= 2 && !this.eqGraph?.failed) availability = "available";
+    else if (!next.enabled && this.audio === this.nativeAudio && availability === "checking") availability = "idle";
     this.set({ equalizer: next, equalizerBypass: bypass, equalizerAvailability: availability });
     saveEqualizerSettings(next);
     ambient.setEqualizer(next, bypass);
@@ -802,10 +841,22 @@ class Engine {
 
   setEqualizerBypass(bypass: boolean) {
     const ambientActive = this.state.fallback?.kind === "ambient";
-    if (!this.state.equalizer.enabled || (!ambientActive && (this.audio !== this.eqAudio || this.state.equalizerAvailability !== "available"))) return;
+    if (!this.state.equalizer.enabled || (ambientActive ? ambient.equalizerAvailability !== "available" : (this.audio !== this.eqAudio || this.state.equalizerAvailability !== "available"))) return;
+    const comparison = ambientActive ? ambient.equalizerComparison : this.eqGraph?.comparison;
+    if (bypass && this.state.equalizer.matchLevel && !comparison?.ready && !comparison?.locked) {
+      toast("Для сравнения нужна секунда звучащего аудио после настройки", "info");
+      return;
+    }
     this.set({ equalizerBypass: bypass });
     this.applyEqualizerGraph();
     ambient.setEqualizer(this.state.equalizer, bypass);
+  }
+
+  endEqualizerComparison() {
+    this.set({ equalizerBypass: false });
+    if (this.eqGraph) resetEqualizerComparison(this.eqGraph);
+    this.applyEqualizerGraph();
+    ambient.endEqualizerComparison();
   }
 
   setSleep(minutes: number | null) {
@@ -878,6 +929,22 @@ class Engine {
 
   private async attach(st: Station, my: number, resumePosition: number | undefined = st.resumePos) {
     const a = this.audio;
+    if (a === this.eqAudio) {
+      if (!this.eqGraph) throw new Error("EQ не готов");
+      try {
+        await this.eqGraph.ready;
+      } catch {
+        if (my !== this.token) return;
+        // A worklet network/CSP failure can be an AbortError too. It is NOT a
+        // user-cancelled track load: wrap it so play() takes the native fallback.
+        throw new Error("Не удалось загрузить безопасный обработчик EQ");
+      }
+      if (my !== this.token) return;
+      if (this.eqGraph.failed) throw new Error("Обработка EQ недоступна");
+      resetEqualizerComparison(this.eqGraph);
+      this.set({ equalizerBypass: false, equalizerComparison: this.eqGraph.comparison });
+      this.applyEqualizerGraph();
+    }
     let url = st.url;
 
     if (st.kind === "vod") {

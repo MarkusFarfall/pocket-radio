@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import {
+  comparisonGains,
+  equalizerHeadroomDb,
   CUSTOM_EQUALIZER_ID,
   EQUALIZER_BANDS,
   EQUALIZER_MAX_DB,
@@ -68,4 +70,25 @@ test("saved configuration is normalized before it reaches the audio graph", () =
   expect(normalized.preampDb).toBe(6);
   expect(normalized.autoHeadroom).toBe(false);
   expect(normalized.savedPresets[0].gainsDb.slice(0, 3)).toEqual([0, 0, 1.5]);
+});
+
+
+test("headroom accounts for preamp while preserving Flat/0 and manual cuts", () => {
+  expect(equalizerHeadroomDb(0, 0, true)).toBe(0);
+  expect(equalizerHeadroomDb(0, 6, true)).toBeCloseTo(-0.8);
+  expect(equalizerHeadroomDb(7, 6, true)).toBeCloseTo(-7.8);
+  expect(equalizerHeadroomDb(7, -10, true)).toBe(-10);
+  expect(equalizerHeadroomDb(7, 6, false)).toBe(6);
+});
+
+test("level comparison attenuates the louder branch and rejects invalid/silent measurements", () => {
+  expect(comparisonGains(1, 0.25)).toEqual({ dry: 0.5, wet: 1 });
+  expect(comparisonGains(0.25, 1)).toEqual({ dry: 1, wet: 0.5 });
+  expect(comparisonGains(1, 1)).toEqual({ dry: 1, wet: 1 });
+  for (const invalid of [0, -1, NaN, Infinity, 1e-12]) {
+    expect(comparisonGains(invalid, 1)).toBeNull();
+    expect(comparisonGains(1, invalid)).toBeNull();
+  }
+  expect(normalizeEqualizerSettings({}).matchLevel).toBe(true);
+  expect(normalizeEqualizerSettings({ matchLevel: false }).matchLevel).toBe(false);
 });

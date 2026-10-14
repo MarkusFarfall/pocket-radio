@@ -45,10 +45,16 @@ export function EqualizerPanel({ open, onClose }: { open: boolean; onClose: () =
     setSaving(false);
   };
 
-  const supportMessage = p.equalizerAvailability === "unavailable"
-    ? "Этот поток не разрешает обработку звука. Он продолжает играть как обычно; эквалайзер попробует включиться на следующем источнике."
+  const comparison = p.equalizerComparison;
+  const comparisonReady = !eq.matchLevel || comparison.ready || comparison.locked;
+  const supportMessage = !eq.enabled
+    ? "Эквалайзер выключен. Звук воспроизводится без коррекции тембра."
+    : p.equalizerBypass
+      ? (eq.matchLevel ? "Слушаете оригинал с согласованным уровнем A/B. Коррекция тембра отключена." : "Слушаете оригинал без EQ. Выравнивание уровня отключено.")
+      : p.equalizerAvailability === "unavailable"
+    ? "Этот поток не разрешает обработку звука или обработчик недоступен. Он продолжает играть как обычно; эквалайзер попробует включиться на следующем источнике."
     : p.equalizerAvailability === "unsupported"
-      ? "В этом браузере недоступен Web Audio. Воспроизведение останется без изменений."
+      ? "В этом браузере недоступна безопасная обработка EQ (Web Audio / AudioWorklet). Воспроизведение останется без изменений."
       : p.equalizerAvailability === "checking"
         ? "Проверяем, разрешает ли источник обработку звука…"
         : p.equalizerAvailability === "available"
@@ -113,12 +119,25 @@ export function EqualizerPanel({ open, onClose }: { open: boolean; onClose: () =
             <button
               type="button"
               onClick={() => player.setEqualizerBypass(!p.equalizerBypass)}
-              disabled={!eq.enabled || p.equalizerAvailability !== "available"}
+              disabled={!eq.enabled || p.equalizerAvailability !== "available" || (!p.equalizerBypass && !comparisonReady)}
               aria-pressed={p.equalizerBypass}
               className="min-h-10 shrink-0 rounded-xl bg-surface-2 px-3 text-xs font-semibold text-ink transition hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {p.equalizerBypass ? "Вернуть EQ" : "Сравнить без EQ"}
             </button>
+          </div>
+          <div className="space-y-2 border-t border-line/70 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium">Согласовать уровень A/B</span>
+              <Toggle checked={eq.matchLevel} onChange={(matchLevel) => player.updateEqualizer({ ...eq, matchLevel })} label="Согласовать уровень A/B" />
+            </div>
+            <p className="text-xs leading-relaxed text-muted" data-testid="eq-comparison-status" aria-live="polite">
+              {!eq.matchLevel ? "Сравнение без выравнивания: исходный звук может быть заметно громче."
+                : comparison.locked ? `Поправка зафиксирована: оригинал ${comparison.dryDb.toFixed(1)} дБ · EQ ${comparison.wetDb.toFixed(1)} дБ. Переключение не меняет её автоматически.`
+                : eq.enabled && p.equalizerAvailability === "available" && !comparison.ready ? "Для сравнения измеряем секунду звучащего аудио после настройки. На тишине оценка недоступна."
+                : "Сравниваем по измеренному RMS: только ослабляем более громкий вариант. Это не LUFS и не постоянная автогромкость."}
+            </p>
+            {comparison.locked && <button type="button" onClick={() => player.endEqualizerComparison()} className="min-h-10 rounded-lg px-2 text-xs font-semibold text-muted hover:bg-surface-2">Завершить A/B</button>}
           </div>
         </section>
 
@@ -153,7 +172,7 @@ export function EqualizerPanel({ open, onClose }: { open: boolean; onClose: () =
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-medium">Запас от перегруза</div>
-                <p className="mt-0.5 text-xs leading-relaxed text-muted">Автоматически снижает предусиление при подъёме полос, чтобы уменьшить риск клиппинга.</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted">Учитывает подъём полос и предусиление. Выходной ограничитель пиков дополнительно защищает переходы; запас помогает ему не менять динамику.</p>
               </div>
               <Toggle checked={eq.autoHeadroom} onChange={(autoHeadroom) => player.updateEqualizer({ ...eq, autoHeadroom, presetId: "custom" })} label="Автоматический запас от перегруза" />
             </div>
