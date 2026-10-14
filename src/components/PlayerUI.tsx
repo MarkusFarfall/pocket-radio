@@ -46,6 +46,7 @@ import { AddToPlaylistButton } from "./PlaylistPicker";
 import { isPodcastMedia, mediaLabel } from "../lib/media";
 import { shareStation } from "./Share";
 import type { Station } from "../lib/types";
+import { PlayerScene, PlayerDial, usePlayerMotionActive } from "./PlayerScene";
 import { usePlayerAppearance } from "../lib/playerAppearance";
 
 function statusText(p: PlayerState): string {
@@ -195,6 +196,7 @@ function SwipeToDismiss({ children, onDismiss }: { children: ReactNode; onDismis
 /* ------------------------- мини-плеер (телефон и планшет) ------------------------- */
 
 export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
+  const appearance = usePlayerAppearance();
   const p = usePlayer();
   const t = usePlayerTime();
   const st = p.station;
@@ -216,7 +218,7 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
 
   return (
     <SwipeToDismiss onDismiss={dismissPlayer}>
-      <div className="anim-sheet pointer-events-auto relative overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
+      <div className={`player-skin player-mini player-skin-${appearance.skin} anim-sheet pointer-events-auto relative overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl`}>
         {!p.isLive && <div className="absolute left-0 top-0 h-0.5 bg-accent" style={{ width: `${pct}%` }} />}
         <div className="flex items-center gap-3 p-2 pr-3">
           <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label="Открыть плеер">
@@ -355,6 +357,7 @@ function Seek({ className }: { className?: string }) {
 /* ----------------------------- док-панель (компьютер) ----------------------------- */
 
 export function DockPlayer({ onOpen }: { onOpen: () => void }) {
+  const appearance = usePlayerAppearance();
   const p = usePlayer();
   const [equalizerOpen, setEqualizerOpen] = useState(false);
   const st = p.station;
@@ -365,7 +368,7 @@ export function DockPlayer({ onOpen }: { onOpen: () => void }) {
   const ctl = "rounded-full p-2 text-muted transition hover:bg-surface-2 hover:text-ink";
 
   return (
-    <div className="grid h-[84px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-6 border-t border-line bg-surface px-6">
+    <div className={`player-skin player-dock player-skin-${appearance.skin} grid h-[84px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-6 border-t border-line bg-surface px-6`}>
       <div className="flex min-w-0 items-center gap-3">
         <button onClick={onOpen} className="group flex min-w-0 items-center gap-3 text-left" aria-label="Открыть плеер на весь экран">
           <Cover s={st} size={56} className="rounded-lg" spin={active} />
@@ -545,6 +548,7 @@ export function FullPlayer({
   const st = p.station;
   const saved = useSavedStation(st);
   const appearance = usePlayerAppearance();
+  const motionActive = usePlayerMotionActive(p.status === "playing", open);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [equalizerOpen, setEqualizerOpen] = useState(false);
@@ -572,7 +576,8 @@ export function FullPlayer({
   return (
     <Modal open={open} onClose={onClose} size="xl" mobile="page">
       {/* Телефон: компактный плеер, главные действия в первом экране */}
-      <div className={cn("player-mobile relative px-5 pb-5 pt-1 md:hidden", `player-layout-${appearance.layout}`, `player-motion-${appearance.motion}`, active && "is-playing")} data-color-wash={appearance.colorWash ? "on" : "off"} style={{ ["--player-hue" as string]: hue }}>
+      <div className={cn("player-skin player-mobile relative px-5 pb-5 pt-1 md:hidden", `player-skin-${appearance.skin}`, `player-layout-${appearance.layout}`, `player-motion-${appearance.motion}`, motionActive && "is-playing")} data-color-wash={appearance.colorWash ? "on" : "off"} style={{ ["--player-hue" as string]: hue }}>
+        <PlayerScene />
         <div className="player-aurora pointer-events-none absolute inset-0 opacity-0" />
         {appearance.colorWash && <div className="player-wash pointer-events-none absolute inset-x-0 top-0 h-56 opacity-35 blur-3xl" style={{ background: `radial-gradient(circle at 50% 18%, hsl(${hue} 78% 56%), transparent 70%)` }} />}
         <div className="relative">
@@ -590,6 +595,7 @@ export function FullPlayer({
             )}
           </div>
 
+          <PlayerDial />
           <div className="player-main-grid">
           <div className="player-art-wrap relative mx-auto mt-3 aspect-square w-[min(48vw,176px)]">
             <span className="player-wave player-wave-1 absolute inset-[-8%] rounded-full border border-accent/35 opacity-0" />
@@ -693,9 +699,11 @@ export function FullPlayer({
       </Modal>
 
       {/* Планшет и компьютер: двухколоночная версия */}
-      <div className="relative hidden md:block">
+      <div className={cn("player-skin player-desktop relative hidden md:block", `player-skin-${appearance.skin}`, `player-layout-${appearance.layout}`, `player-motion-${appearance.motion}`, motionActive && "is-playing")} data-color-wash={appearance.colorWash ? "on" : "off"} style={{ ["--player-hue" as string]: hue }}>
+        <PlayerScene />
+        <div className="player-aurora pointer-events-none absolute inset-0 opacity-0" />
         <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-80 opacity-50 blur-3xl transition-all duration-700 dark:opacity-40"
+          className="player-wash pointer-events-none absolute inset-x-0 top-0 h-80 opacity-50 blur-3xl"
           style={{ background: `radial-gradient(circle at 50% 30%, hsl(${hue} 80% 55%), transparent 70%)` }}
         />
         <div className="relative px-6 pb-6 pt-4 md:px-9 md:pb-9 md:pt-6">
@@ -713,21 +721,24 @@ export function FullPlayer({
             )}
           </div>
 
-          <div className="md:grid md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] md:gap-10">
+          <PlayerDial />
+          <div className="player-desktop-grid md:grid md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] md:gap-10">
             {/* левая колонка: обложка и управление */}
             <div className="min-w-0">
-              <div className="mx-auto aspect-square w-[min(54vw,210px)] md:w-full md:max-w-[320px]">
+              <div className="player-art-wrap relative mx-auto aspect-square w-[min(54vw,210px)] md:w-full md:max-w-[320px]">
+                <span className="player-wave player-wave-1 absolute inset-[-8%] rounded-full border border-accent/35 opacity-0" />
+                <span className="player-wave player-wave-2 absolute inset-[-16%] rounded-full border border-accent/20 opacity-0" />
                 <Cover
                   s={st}
                   size="fill"
-                  className={cn("rounded-3xl shadow-2xl ring-1 ring-black/10 transition-transform duration-500", active ? "scale-100" : "scale-95")}
+                  className={cn("player-art rounded-3xl shadow-2xl ring-1 ring-black/10 transition-transform duration-500", active ? "scale-100" : "scale-95")}
                   spin={active}
                   eager
                   fit={p.isLive ? "contain" : "cover"}
                 />
               </div>
 
-              <div className="mt-6 text-center">
+              <div className="player-copy mt-6 text-center">
                 <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
                   {p.status === "playing" && <Equalizer active className="text-accent" />}
                   <span className={p.status === "error" ? "text-bad" : ""}>{statusText(p)}</span>

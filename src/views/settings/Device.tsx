@@ -167,7 +167,7 @@ export function Device() {
             onClick={() => {
               resetUi();
               setThemePrefs({ mode: "system", light: "paper", dark: "charcoal", accent: null });
-              setPlayerAppearance({ layout: "focus", motion: "calm", colorWash: true });
+              setPlayerAppearance({ skin: "classic", layout: "focus", motion: "calm", colorWash: true });
               toast("Оформление сброшено", "ok");
             }}
           >

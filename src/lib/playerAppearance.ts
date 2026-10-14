@@ -3,7 +3,10 @@ import { useSyncExternalStore } from "react";
 export type PlayerLayout = "focus" | "vinyl" | "compact";
 export type PlayerMotion = "calm" | "vinyl" | "signal" | "aurora" | "none";
 
+export type PlayerSkin = "classic" | "aurora" | "vinyl" | "neon" | "paper" | "studio";
+
 export interface PlayerAppearance {
+  skin: PlayerSkin;
   layout: PlayerLayout;
   motion: PlayerMotion;
   /** окрашивать фон плеера по текущей обложке/названию */
@@ -24,45 +27,70 @@ export const PLAYER_MOTIONS: { id: PlayerMotion; name: string; desc: string }[] 
   { id: "none", name: "Без движения", desc: "Статичный плеер и минимум нагрузки" },
 ];
 
+export interface PlayerTemplate {
+  id: PlayerSkin;
+  name: string;
+  desc: string;
+  tag: string;
+  prefs: PlayerAppearance;
+}
+
+export const PLAYER_TEMPLATES: PlayerTemplate[] = [
+  { id: "classic", name: "Классика", desc: "Знакомый плеер в цветах приложения. Ничего лишнего.", tag: "Универсальный", prefs: { skin: "classic", layout: "focus", motion: "calm", colorWash: true } },
+  { id: "aurora", name: "Северное сияние", desc: "Полупрозрачные панели и медленный свет ночного неба.", tag: "Атмосферный", prefs: { skin: "aurora", layout: "focus", motion: "aurora", colorWash: true } },
+  { id: "vinyl", name: "Тёплый винил", desc: "Вращающаяся пластинка, янтарные акценты и мягкий свет.", tag: "Аналоговый", prefs: { skin: "vinyl", layout: "vinyl", motion: "vinyl", colorWash: false } },
+  { id: "neon", name: "Ночной эфир", desc: "Радиоволны, тонкая сетка и мятный неон на графите.", tag: "Электронный", prefs: { skin: "neon", layout: "focus", motion: "signal", colorWash: false } },
+  { id: "paper", name: "Тихое утро", desc: "Светлая бумага, выразительная типографика. Без движения.", tag: "Минимализм", prefs: { skin: "paper", layout: "focus", motion: "none", colorWash: false } },
+  { id: "studio", name: "Студия FM", desc: "Компактный модуль, приборная шкала и оранжевые детали.", tag: "Компактный", prefs: { skin: "studio", layout: "compact", motion: "calm", colorWash: false } },
+];
+
 const KEY = "pr.playerAppearance";
-const DEFAULT: PlayerAppearance = { layout: "focus", motion: "calm", colorWash: true };
+export const DEFAULT_PLAYER_APPEARANCE: PlayerAppearance = { ...PLAYER_TEMPLATES[0].prefs };
+
+export function normalizePlayerAppearance(value: unknown): PlayerAppearance {
+  const p = value && typeof value === "object" ? value as Partial<PlayerAppearance> : {};
+  return {
+    skin: PLAYER_TEMPLATES.some((x) => x.id === p.skin) ? p.skin! : "classic",
+    layout: PLAYER_LAYOUTS.some((x) => x.id === p.layout) ? p.layout! : "focus",
+    motion: PLAYER_MOTIONS.some((x) => x.id === p.motion) ? p.motion! : "calm",
+    colorWash: typeof p.colorWash === "boolean" ? p.colorWash : true,
+  };
+}
 
 function read(): PlayerAppearance {
-  try {
-    const p = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<PlayerAppearance> | null;
-    if (p) {
-      return {
-        layout: PLAYER_LAYOUTS.some((x) => x.id === p.layout) ? p.layout! : DEFAULT.layout,
-        motion: PLAYER_MOTIONS.some((x) => x.id === p.motion) ? p.motion! : DEFAULT.motion,
-        colorWash: p.colorWash !== false,
-      };
-    }
-  } catch {
-    /* повреждённая запись */
-  }
-  return { ...DEFAULT };
+  try { return normalizePlayerAppearance(JSON.parse(localStorage.getItem(KEY) ?? "null")); }
+  catch { return { ...DEFAULT_PLAYER_APPEARANCE }; }
 }
 
 let prefs = read();
 const subs = new Set<() => void>();
 export const getPlayerAppearance = () => prefs;
 
+export function matchPlayerTemplate(value: PlayerAppearance) {
+  return PLAYER_TEMPLATES.find(({ prefs: p }) => p.skin === value.skin && p.layout === value.layout && p.motion === value.motion && p.colorWash === value.colorWash);
+}
+
+export function applyPlayerTemplate(id: PlayerSkin) {
+  const template = PLAYER_TEMPLATES.find((x) => x.id === id);
+  if (template) setPlayerAppearance(template.prefs);
+}
+
 export function setPlayerAppearance(patch: Partial<PlayerAppearance>) {
-  prefs = { ...prefs, ...patch };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(prefs));
-  } catch {
-    /* ignore */
-  }
+  prefs = normalizePlayerAppearance({ ...prefs, ...patch });
+  try { localStorage.setItem(KEY, JSON.stringify(prefs)); }
+  catch { /* device storage can be disabled */ }
   subs.forEach((f) => f());
 }
 
+if (typeof window !== "undefined") window.addEventListener("storage", (event) => {
+  if (event.key !== KEY && event.key !== null) return;
+  prefs = read();
+  subs.forEach((f) => f());
+});
+
 export function usePlayerAppearance(): PlayerAppearance {
   return useSyncExternalStore(
-    (f) => {
-      subs.add(f);
-      return () => subs.delete(f);
-    },
+    (f) => { subs.add(f); return () => subs.delete(f); },
     () => prefs
   );
 }

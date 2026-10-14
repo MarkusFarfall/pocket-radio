@@ -1,7 +1,9 @@
-import { Check, Pause, Play } from "lucide-react";
-import { PLAYER_LAYOUTS, PLAYER_MOTIONS, setPlayerAppearance, usePlayerAppearance, type PlayerLayout, type PlayerMotion } from "../lib/playerAppearance";
+import { useState } from "react";
+import { Check, Monitor, Smartphone, RotateCcw, Pause, Play } from "lucide-react";
+import { PLAYER_LAYOUTS, PLAYER_MOTIONS, PLAYER_TEMPLATES, DEFAULT_PLAYER_APPEARANCE, applyPlayerTemplate, matchPlayerTemplate, setPlayerAppearance, usePlayerAppearance, type PlayerLayout, type PlayerMotion } from "../lib/playerAppearance";
 import { cn } from "../utils/cn";
 import { Toggle } from "./ui";
+import { PlayerTemplatePreview } from "./PlayerScene";
 import { Row } from "../views/settings/parts";
 
 function LayoutPreview({ id, active }: { id: PlayerLayout; active: boolean }) {
@@ -33,11 +35,50 @@ function MotionPreview({ id }: { id: PlayerMotion }) {
 
 export function PlayerAppearanceSection() {
   const p = usePlayerAppearance();
+  const current = matchPlayerTemplate(p);
+  const skin = PLAYER_TEMPLATES.find((x) => x.id === p.skin)!;
+  const [desktop, setDesktop] = useState(false);
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-7 player-appearance-settings">
+      <section data-row="Шаблоны плеера" aria-labelledby="player-templates-title">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div><p className="mb-1 text-[10px] font-bold uppercase tracking-[.2em] text-accent">Коллекция / 06</p>
+            <h3 id="player-templates-title" className="font-display text-2xl font-bold tracking-tight">Шаблоны плеера</h3>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">Ваш плеер — ваш характер. Готовые образы для телефона и компьютера. Меняется только оформление, не звук.</p>
+          </div>
+          <button onClick={() => setPlayerAppearance(DEFAULT_PLAYER_APPEARANCE)} className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line px-3 text-xs font-semibold hover:bg-surface-2"><RotateCcw size={13} /> По умолчанию</button>
+        </div>
+        <div className="template-showcase mb-5 grid overflow-hidden rounded-2xl border border-line bg-surface lg:grid-cols-[1.15fr_1fr]">
+          <div className="min-w-0 p-3 sm:p-4">
+            <PlayerTemplatePreview appearance={p} large desktop={desktop} />
+          </div>
+          <div className="flex flex-col justify-center gap-3 p-5 lg:pl-2">
+            <span className="text-[10px] font-bold uppercase tracking-[.18em] text-muted">Сейчас выбран</span>
+            <p className="font-display text-xl font-semibold" aria-live="polite">{skin.name}{!current && <span className="mt-1 block text-xs font-normal text-muted">С вашими настройками</span>}</p>
+            <p className="text-sm leading-relaxed text-muted">{skin.desc}</p>
+            <div className="inline-flex w-fit gap-1 rounded-full border border-line p-1" role="group" aria-label="Формат предпросмотра">
+              <button onClick={() => setDesktop(false)} aria-pressed={!desktop} className={cn("inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold", !desktop && "bg-ink text-bg")}><Smartphone size={14} /> Телефон</button>
+              <button onClick={() => setDesktop(true)} aria-pressed={desktop} className={cn("inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold", desktop && "bg-ink text-bg")}><Monitor size={14} /> Компьютер</button>
+            </div>
+            <p className="text-xs leading-relaxed text-muted">Применяется сразу и сохраняется на этом устройстве. Движение в карточках — при наведении или фокусе.</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 xl:grid-cols-3">
+          {PLAYER_TEMPLATES.map((template, index) => {
+            const on = current?.id === template.id;
+            return <button key={template.id} aria-label={`Шаблон «${template.name}»`} aria-pressed={on} onClick={() => applyPlayerTemplate(template.id)} className={cn("player-template-card min-w-0 rounded-2xl border p-2 text-left transition", on ? "border-accent ring-2 ring-accent/25" : "border-line hover:border-ink/30")}>
+              <PlayerTemplatePreview appearance={template.prefs} />
+              <span className="mt-3 flex items-center justify-between gap-1 px-1"><span className="text-[9px] font-bold uppercase tracking-[.12em] text-muted">0{index + 1} / {template.tag}</span>{on && <Check size={14} className="shrink-0 text-accent" />}</span>
+              <span className="mt-1 block px-1 text-sm font-semibold">{template.name}</span>
+              <span className="mb-1 mt-1 block px-1 text-xs leading-relaxed text-muted">{template.desc}</span>
+            </button>;
+          })}
+        </div>
+      </section>
+      <div className="border-t border-line pt-6"><h3 className="text-xs font-bold uppercase tracking-[.16em] text-muted">Тонкая настройка</h3><p className="mt-1 text-xs text-muted">Измените выбранный образ под себя. Другие настройки приложения останутся прежними.</p></div>
+      <div data-row="Макет плеера">
         <h3 className="mb-1 font-display text-lg font-semibold">Макет плеера</h3>
-        <p className="mb-3 text-sm text-muted">Выберите, как выглядит большой плеер на телефоне. Компьютерный док остаётся компактным.</p>
+        <p className="mb-3 text-sm text-muted">Выберите композицию большого плеера. Цвета шаблона также применяются к мини-плееру и компьютерному доку.</p>
         <div className="grid gap-3 sm:grid-cols-3">
           {PLAYER_LAYOUTS.map((x) => {
             const on = p.layout === x.id;
@@ -55,7 +96,7 @@ export function PlayerAppearanceSection() {
         </div>
       </div>
 
-      <div>
+      <div data-row="Характер движения">
         <h3 className="mb-1 font-display text-lg font-semibold">Характер движения</h3>
         <p className="mb-3 text-sm text-muted">Анимации работают через transform и opacity. Системная настройка «Меньше анимаций» имеет приоритет.</p>
         <div className="grid gap-2 sm:grid-cols-2">
