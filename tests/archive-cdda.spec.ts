@@ -103,7 +103,8 @@ test("opens a CUE-indexed raw CD image as separate tracks and requests only the 
   const request = page.waitForRequest((item) => item.url().includes("/api/archive-file?") && item.headers().range === "bytes=0-176399");
   await page.getByRole("button", { name: "Включить «Summer Rain»" }).click();
   await request;
-  expect(ranges).toEqual(["bytes=0-176399"]);
+  // The request event can precede execution of the route handler. Wait for its recorded range.
+  await expect.poll(() => ranges).toEqual(["bytes=0-176399"]);
 });
 
 test("unsupported Archive entries show a clear no-audio message instead of a blank panel", async ({ page }) => {
@@ -131,7 +132,7 @@ test("unsupported Archive entries show a clear no-audio message instead of a bla
   await page.getByRole("button", { name: "Джаз 20–50-х" }).click();
   await page.getByRole("button", { name: /Unsupported archive entry/ }).click();
 
-  await expect(page.getByText("Не нашёл поддерживаемых аудиофайлов или разметки .cue для CD-образа.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Нет аудио для этого браузера" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Включить/ })).toHaveCount(0);
 });
 

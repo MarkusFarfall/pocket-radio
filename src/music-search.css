@@ -90,3 +90,67 @@
   .offline-library-heading { grid-template-columns: minmax(0,1fr); }
   .offline-library-heading > button { justify-self: start; }
 }
+
+/* Browse: compact navigation, query-first search and truthful album availability. */
+.album-summary { position: relative; display: grid; grid-template-columns: 160px minmax(0,1fr); align-items: center; gap: 24px; margin-top: 20px; }
+.album-art { aspect-ratio: 1; min-width: 0; }
+.album-copy { min-width: 0; }
+.album-copy h2 { font-size: 1.8rem; overflow-wrap: anywhere; }
+.album-actions button { min-height: 44px; height: auto; padding-block: 10px; }
+.album-availability { overflow-wrap: anywhere; }
+.archive-album-row > span:nth-of-type(2) { max-width: 32%; }
+.archive-album-row > span:nth-of-type(2) > span { white-space: normal; overflow-wrap: anywhere; }
+@media(max-width:767px) {
+  .discover-page { gap: 14px; }
+  .discover-page > .design-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .discover-page > .design-page-heading h1 { flex-shrink: 0; font-size: 1.35rem; line-height: 1.2; margin: 0; }
+  .discover-page > .design-page-heading p { display: none; }
+  .discover-mobile-picker { min-width: 0; max-width: 240px; flex: 1; }
+  .discover-mobile-picker select { min-height: 44px; padding: 10px 8px; font-size: .72rem; }
+  .discover-page > *, .music-workspace > *, .music-discovery > * { margin-top: 0; margin-bottom: 14px; }
+  .music-search-card { padding: 12px; }
+  .music-query-controls [aria-label="Тип поиска"] button { min-height: 44px; font-size: .68rem; }
+  .music-query-controls form input { min-height: 48px; padding-left: 38px; padding-right: 36px; font-size: .82rem; }
+  .music-query-controls form > div > button { right: 0; width: 36px; min-height: 44px; display: grid; place-items: center; }
+  .music-search-submit { width: 48px; min-height: 48px; flex-shrink: 0; padding: 0; }
+  .music-search-submit > span { display: none; }
+  .music-source-heading { flex-direction: row; }
+  .music-provider-select { min-height: 44px; padding-block: 8px; }
+  .music-search-rights summary { min-height: 44px; display: list-item; padding-block: 12px; font-size: .65rem; }
+  .music-results-heading { flex-wrap: wrap; gap: 6px 12px; }
+  .music-results-heading > button { min-height: 44px; }
+  .music-results-heading h2 { font-size: 1.1rem; }
+  .music-catalog-note { padding-inline: 4px; font-size: .68rem; }
+  .archive-album-row { gap: 10px; padding: 12px 8px; }
+  .archive-album-row > span:nth-of-type(2) > span { font-size: .6rem; padding: 5px 6px; }
+  .album-hero { padding: 12px 16px 18px; }
+  .album-summary { grid-template-columns: 88px minmax(0,1fr); gap: 16px; margin-top: 16px; align-items: start; }
+  .album-copy h2 { font-size: 1.1rem; }
+  .album-copy > p { font-size: .68rem; }
+  .album-copy > p:last-child { gap: 6px; }
+  .album-actions button { font-size: .75rem; }
+  .album-availability { font-size: .78rem; }
+  .album-availability a, .album-availability button { min-height: 44px; max-width: 100%; font-size: .7rem; }
+}
+@media(max-width:360px) {
+  .album-summary { grid-template-columns: 64px minmax(0,1fr); gap: 12px; }
+  .album-actions > div:first-child { grid-template-columns: 1fr; }
+}
+.music-source-heading > .music-search-rights { flex-shrink: 0; }
+.music-source-heading:has(details[open]) { flex-wrap: wrap; }
+.music-source-heading > details[open] { flex: 1 0 100%; }
+@media(max-width:767px) {
+  .music-source-heading { align-items: center; gap: 10px; }
+  .music-source-heading > p { display: none; }
+  .music-source-heading > select { width: auto !important; min-width: 0; flex: 1; }
+  .music-source-heading .music-search-rights summary { font-size: .68rem; white-space: nowrap; }
+}
+.music-catalog-note summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
+.music-catalog-note p { padding-bottom: 12px; }
+.music-results-heading h2 { flex: 1; }
+.music-results-count { flex-shrink: 0; max-width: 40%; text-align: right; }
+@media(max-width:767px) {
+  .music-results-heading { flex-wrap: nowrap; }
+  .music-results-heading > button { flex-shrink: 0; min-width: 44px; justify-content: center; padding-inline: 8px; }
+  .music-results-count { font-size: .65rem; }
+}

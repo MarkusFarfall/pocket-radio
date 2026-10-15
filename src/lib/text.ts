@@ -98,12 +98,14 @@ export function fixText(raw: string | undefined | null): string {
   let value = raw.replace(/\0/g, "").trim();
   for (let round = 0; round < 3; round++) {
     const latinBytes = bytesLatin(value);
-    const candidates = [
-      utf8(latinBytes),
-      utf8(bytesCp(value)),
-      utf8(bytesCp1252(value)),
-      decode1251(latinBytes),
-    ].filter((x): x is string => !!x && x !== value);
+    const utf8Candidates = [utf8(latinBytes), utf8(bytesCp1252(value)), utf8(bytesCp(value))]
+      .filter((x): x is string => !!x && x !== value);
+    // Prefer a valid, improving UTF-8 step before a lossy CP1251 reinterpretation.
+    // Double-encoded Archive titles need two steps; greedy CP1251 scoring stranded them
+    // in convincing-looking but unreadable Cyrillic after the very first step.
+    const utf8Step = utf8Candidates.find((candidate) => badness(candidate) < badness(value));
+    if (utf8Step) { value = utf8Step; continue; }
+    const candidates = [decode1251(latinBytes)].filter((x): x is string => !!x && x !== value);
     let best = value;
     let score = badness(value);
     for (const c of candidates) {

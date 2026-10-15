@@ -21,7 +21,9 @@ async function archiveDocs(
     const url = new URL(route.request().url());
     const query = url.searchParams.get("q") ?? "";
     queries.push(query);
-    const responseDocs = typeof docs === "function" ? docs(query) : docs;
+    const responseDocs = typeof docs === "function"
+      ? [...new Map([query, ...(query.match(/(?:creator|title|subject):"[^"]+"/g) ?? [])].flatMap(docs).map(doc => [doc.identifier, doc])).values()]
+      : docs;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -236,7 +238,7 @@ test("artist search keeps Talk Talk creator matches ahead of title-only mentions
   await expect(page.getByText("Various artists", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Talk Talk cover", { exact: true })).toHaveCount(0);
   expect(queries[0]).toContain('creator:"Talk Talk"');
-  expect(queries.some((query) => query.includes('title:"Talk Talk"'))).toBe(false);
+  expect(queries.some((query) => query.includes('title:"Talk Talk"'))).toBe(true);
 });
 
 test("smart artist search finds Zemfira variants and Mikhail Krug when creator metadata is missing", async ({ page }) => {

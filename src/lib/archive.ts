@@ -30,6 +30,7 @@ export type AlbumSearchScope = "artist" | "all";
 export interface AlbumSearchPage {
   albums: Album[];
   hasMore: boolean;
+  limited?: boolean;
 }
 
 const SEARCH_PAGE_SIZE = 30;
@@ -127,6 +128,7 @@ export const COLLECTIONS: Collection[] = [
 ];
 
 type SearchField = "creator" | "title" | "subject";
+type VerifiedAlbum = Pick<Album, "trackCount" | "cover"> & { creator?: string };
 
 function cleanSearchPhrase(text: string): string {
   return text
@@ -151,7 +153,7 @@ const SPOKEN_WORD_MARKERS = [
   "book on tape", "book on cd", "radio drama", "audio drama", "podcast", "popcast", "episode", "lecture", "sermon", "interview",
   "radio show", "radio program", "radio programme", "radio broadcast", "radio transmission", "aircheck",
   "film review", "movie review", "аудиокнига", "аудиокниги", "аудиоспектакль", "радиоспектакль", "радиопостановка",
-  "читает", "читают", "чтение вслух", "лекция", "интервью",
+  "читает", "читают", "чтение вслух", "лекция", "интервью", "this book", "эта книга", "в этой книге",
 ].map(normalizeSearchText);
 
 /** Exact genre terms are translated to the Archive's commonly indexed English subjects. */
@@ -165,11 +167,11 @@ const CYRILLIC_TO_LATIN: Record<string, string> = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh", з: "z",
   и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r",
   с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch",
-  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya", і: "i", ї: "yi", є: "ye", ґ: "g",
 };
 
 function transliterateCyrillicToLatin(value: string): string {
-  return value.replace(/[А-ЯЁа-яё]/g, (letter) => {
+  return value.replace(/[А-ЯЁІЇЄҐа-яёіїєґ]/g, (letter) => {
     const lower = letter.toLowerCase();
     const latin = CYRILLIC_TO_LATIN[lower];
     if (latin === undefined) return letter;
@@ -177,12 +179,20 @@ function transliterateCyrillicToLatin(value: string): string {
   });
 }
 
-/** Original spelling plus a conservative Cyrillic-to-Latin alias for archive metadata. */
+// Conventional names cannot always be recovered with letter-by-letter transliteration.
+// Apply only whole-name aliases, never substring replacement inside song titles.
+const ARTIST_ALIASES = [
+  ["Земфира", "Zemfira"],
+  ["Океан Ельзи", "Океан Эльзы", "Океан Эльзи", "Okean Elzy", "Okean Elzi"],
+];
+
+/** Original spelling, known whole-name aliases and conservative transliteration. */
 function searchVariants(text: string): string[] {
   const phrase = cleanSearchPhrase(text);
   if (!phrase || !normalizeSearchText(phrase)) return [];
 
-  const candidates = [phrase];
+  const aliases = ARTIST_ALIASES.find((group) => group.some((name) => [phrase, transliterateCyrillicToLatin(phrase)].some((candidate) => normalizeSearchText(name) === normalizeSearchText(candidate))));
+  const candidates = [phrase, ...(aliases ?? [])];
   const genre = findArchiveGenre(phrase);
   if (genre) candidates.push(...genre.aliases);
   if (/\p{Script=Cyrillic}/u.test(phrase)) {
@@ -216,7 +226,9 @@ interface Doc {
   identifier: string;
   title?: string | string[];
   creator?: string | string[];
+  artist?: string | string[];
   subject?: string | string[];
+  description?: string | string[];
   collection?: string | string[];
   year?: string | number;
   downloads?: number;
@@ -224,11 +236,11 @@ interface Doc {
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? ""));
 
-function toAlbum(d: Doc, match?: AlbumSearchMatch, verifiedFiles?: Pick<Album, "trackCount" | "cover">): Album {
+function toAlbum(d: Doc, match?: AlbumSearchMatch, verifiedFiles?: VerifiedAlbum): Album {
   return {
     id: d.identifier,
     title: fixText(one(d.title)) || d.identifier,
-    creator: fixText(one(d.creator)),
+    creator: fixText(one(d.creator) || one(d.artist)),
     year: d.year ? String(d.year) : "",
     downloads: Number(d.downloads) || 0,
     ...(verifiedFiles ?? {}),
@@ -239,7 +251,7 @@ function toAlbum(d: Doc, match?: AlbumSearchMatch, verifiedFiles?: Pick<Album, "
 async function requestAlbumDocs(query: string, page: number, rows: number, signal?: AbortSignal): Promise<{ docs: Doc[]; total: number }> {
   const p = new URLSearchParams();
   p.set("q", `(${query}) AND mediatype:audio`);
-  for (const f of ["identifier", "title", "creator", "subject", "collection", "year", "downloads"]) p.append("fl[]", f);
+  for (const f of ["identifier", "title", "creator", "artist", "subject", "description", "collection", "year", "downloads"]) p.append("fl[]", f);
   p.append("sort[]", "downloads desc");
   p.set("rows", String(rows));
   p.set("page", String(page));
@@ -290,16 +302,16 @@ function artistCreatorMatch(value: string, variants: string[]): boolean {
 interface SearchHit {
   doc: Doc;
   match: AlbumSearchMatch;
-  verifiedFiles?: Pick<Album, "trackCount" | "cover">;
+  verifiedFiles?: VerifiedAlbum;
 }
 
 interface SearchQuery {
   query: string;
   match: (doc: Doc) => AlbumSearchMatch | undefined;
+  verify?: (doc: Doc) => Promise<VerifiedAlbum | undefined>;
 }
 
 const MATCH_WEIGHT: Record<AlbumSearchMatch, number> = { artist: 3, title: 2, subject: 1 };
-const SMART_ARTIST_FALLBACK_THRESHOLD = 8;
 
 function hasShortArtistToken(variants: string[]): boolean {
   const particles = new Set(["and", "de", "da", "do", "el", "i", "la", "of", "the", "и"]);
@@ -334,7 +346,7 @@ function hasBroadcastCollection(doc: Doc): boolean {
 /** Filters book readings, talk recordings and radio programmes that Archive also indexes as mediatype:audio. */
 function isSpokenWordArchiveItem(doc: Doc): boolean {
   if (hasSpokenWordCollection(doc)) return true;
-  const metadata = ` ${normalizeSearchText(`${one(doc.title)} ${one(doc.subject)} ${one(doc.creator)}`)} `;
+  const metadata = ` ${normalizeSearchText(`${one(doc.title)} ${one(doc.subject)} ${one(doc.creator)} ${one(doc.description).slice(0, 20000).replace(/<[^>]*>/g, " ")}`)} `;
   return SPOKEN_WORD_MARKERS.some((marker) => metadata.includes(` ${marker} `));
 }
 
@@ -345,7 +357,7 @@ function isNoisyArtistSource(doc: Doc): boolean {
 
 function artistFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undefined {
   if (isNoisyArtistSource(doc)) return undefined;
-  if (artistCreatorMatch(one(doc.creator), variants)) return "artist";
+  if (artistCreatorMatch(one(doc.creator) || one(doc.artist), variants)) return "artist";
   return undefined;
 }
 
@@ -355,7 +367,7 @@ function titleFieldMatch(doc: Doc, variants: string[]): AlbumSearchMatch | undef
   const artistPrefixMatches = variants.some((variant) => {
     const phrase = normalizeSearchText(variant);
     if (!phrase) return false;
-    const creatorMissingForSelfTitle = title === phrase && !one(doc.creator).trim() && hasPhrase(one(doc.subject), phrase);
+    const creatorMissingForSelfTitle = title === phrase && !one(doc.creator).trim();
     return creatorMissingForSelfTitle || title.startsWith(`${phrase} `) || title.startsWith(`the ${phrase} `);
   });
   return artistPrefixMatches ? "title" : undefined;
@@ -400,11 +412,12 @@ async function collectSearchHits(
   needed: number,
   signal?: AbortSignal,
   initial: SearchHit[] = [],
-): Promise<{ hits: SearchHit[]; exhausted: boolean }> {
+): Promise<{ hits: SearchHit[]; exhausted: boolean; limited: boolean }> {
   const byId = new Map<string, SearchHit>();
   for (const hit of initial) byId.set(hit.doc.identifier, hit);
 
   let exhausted = true;
+  let limited = false;
   for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
     if (byId.size >= needed) {
       exhausted = false;
@@ -417,11 +430,26 @@ async function collectSearchHits(
 
     while (rawPage <= MAX_SEARCH_BATCHES) {
       const result = await requestAlbumDocs(search.query, rawPage, SEARCH_BATCH_SIZE, signal);
-      for (const doc of result.docs) {
+      const candidates = result.docs.flatMap((doc): SearchHit[] => {
         const match = search.match(doc);
-        if (!match) continue;
-        const previous = byId.get(doc.identifier);
-        if (!previous || MATCH_WEIGHT[match] > MATCH_WEIGHT[previous.match]) byId.set(doc.identifier, { doc, match });
+        return match ? [{ doc, match }] : [];
+      });
+      // Verify before counting towards a page, otherwise rejected subject hits consume the page
+      // and make later valid releases unreachable. Bound concurrent metadata requests.
+      if (search.verify) {
+        let next = 0;
+        const worker = async () => {
+          while (next < candidates.length) {
+            const hit = candidates[next++];
+            hit.verifiedFiles = await search.verify!(hit.doc);
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, worker));
+      }
+      for (const hit of candidates) {
+        if (search.verify && !hit.verifiedFiles) continue;
+        const previous = byId.get(hit.doc.identifier);
+        if (!previous || MATCH_WEIGHT[hit.match] > MATCH_WEIGHT[previous.match]) byId.set(hit.doc.identifier, hit);
       }
 
       const reachedEnd = result.docs.length < SEARCH_BATCH_SIZE || rawPage * SEARCH_BATCH_SIZE >= result.total;
@@ -430,6 +458,7 @@ async function collectSearchHits(
         break;
       }
       if (byId.size >= needed) break;
+      if (rawPage === MAX_SEARCH_BATCHES) { limited = true; queryExhausted = true; }
       rawPage += 1;
     }
 
@@ -443,41 +472,26 @@ async function collectSearchHits(
     }
   }
 
-  return { hits: [...byId.values()], exhausted };
+  return { hits: [...byId.values()], exhausted, limited };
 }
 
-async function verifiedSubjectFiles(doc: Doc, variants: string[], signal?: AbortSignal): Promise<Pick<Album, "trackCount" | "cover"> | undefined> {
+async function verifiedSubjectFiles(doc: Doc, variants: string[], signal?: AbortSignal): Promise<VerifiedAlbum | undefined> {
   try {
     const meta = await metadata(doc.identifier, signal);
     const tracks = audioFiles(meta.files);
     if (!tracks.length) return undefined;
     const albumArtistMatches = variants.some((variant) => hasPhrase(meta.creator, normalizeSearchText(variant)));
     const trackArtistMatches = tracks.map((file) => variants.some((variant) =>
-      [file.name, file.title ?? "", file.creator ?? ""].some((value) => hasPhrase(value, normalizeSearchText(variant))),
+      [file.name, file.title ?? "", file.creator ?? "", file.artist ?? ""].some((value) => hasPhrase(value, normalizeSearchText(variant))),
     ));
     // A subject tag may point to a compilation or a cover. Accept it only if the album metadata
     // names the performer, or every audio track independently does; a single hit in a mix is noise.
     if (!albumArtistMatches && !trackArtistMatches.every(Boolean)) return undefined;
-    return { trackCount: tracks.length, cover: imageUrl(doc.identifier, meta.files) };
+    return { trackCount: tracks.length, cover: imageUrl(doc.identifier, meta.files), ...(meta.creator ? { creator: fixText(meta.creator) } : {}) };
   } catch (error) {
     if (signal?.aborted) throw error;
     return undefined;
   }
-}
-
-async function verifySubjectHits(hits: SearchHit[], variants: string[], signal?: AbortSignal): Promise<SearchHit[]> {
-  const candidates = hits.filter((hit) => hit.match === "subject");
-  const verified: SearchHit[] = [];
-  let next = 0;
-  const worker = async () => {
-    while (next < candidates.length) {
-      const hit = candidates[next++];
-      const files = await verifiedSubjectFiles(hit.doc, variants, signal);
-      if (files) verified.push({ ...hit, verifiedFiles: files });
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, worker));
-  return [...hits.filter((hit) => hit.match !== "subject"), ...verified];
 }
 
 /** Exact phrase search: performer first, then artist-led titles and subject tags when metadata is sparse. */
@@ -486,39 +500,38 @@ export async function searchTextAlbums(text: string, scope: AlbumSearchScope, pa
   if (!variants.length) return { albums: [], hasMore: false };
 
   const needed = page * SEARCH_PAGE_SIZE + 1;
-  let collected: { hits: SearchHit[]; exhausted: boolean };
+  let collected: { hits: SearchHit[]; exhausted: boolean; limited: boolean };
 
   if (scope === "artist") {
-    const performerQueries = variants.map((variant) => ({
-      query: phraseQuery([variant], ["creator"]),
-      match: (doc: Doc) => artistFieldMatch(doc, [variant]),
-    }));
-    const performers = await collectSearchHits(performerQueries, needed, signal);
+    // Query spellings together: the provider globally sorts them, so loading page two cannot
+    // insert a higher-ranked Latin spelling ahead of already displayed Cyrillic matches.
+    const performers = await collectSearchHits([{
+      query: phraseQuery(variants, ["creator"]),
+      match: (doc) => artistFieldMatch(doc, variants),
+    }], needed, signal);
     collected = performers;
-
-    // Keep creator matches clean (notably for short/ambiguous names such as a-ha). Only broaden
-    // when metadata is sparse; title hits stay behind performer hits and are identified in the UI.
     const shortNameAlreadyMatched = performers.hits.length > 0 && hasShortArtistToken(variants);
-    if (performers.hits.length < SMART_ARTIST_FALLBACK_THRESHOLD && !shortNameAlreadyMatched) {
-      const titleQueries = variants.map((variant) => ({
-        query: phraseQuery([variant], ["title"]),
-        match: (doc: Doc) => titleFieldMatch(doc, [variant]),
-      }));
-      const titles = await collectSearchHits(titleQueries, needed, signal, performers.hits);
-      collected = { hits: titles.hits, exhausted: performers.exhausted && titles.exhausted };
+    if (performers.exhausted && performers.hits.length < needed && !shortNameAlreadyMatched) {
+      const titles = await collectSearchHits([{
+        query: phraseQuery(variants, ["title"]),
+        match: (doc) => titleFieldMatch(doc, variants),
+        verify: (doc) => {
+          const selfTitled = variants.some((v) => normalizeSearchText(one(doc.title)) === normalizeSearchText(v));
+          return selfTitled && !one(doc.creator).trim()
+            ? verifiedSubjectFiles(doc, variants, signal)
+            : Promise.resolve({});
+        },
+      }], needed, signal, performers.hits);
+      collected = { ...titles, limited: performers.limited || titles.limited };
     }
 
-    // Some IA uploads omit both creator and artist-led title metadata but retain the performer as
-    // a subject tag. Add those only after better matches, filter radio/talk collections, and keep
-    // them visibly labelled as subject matches so they cannot outrank actual artist releases.
     if (!shortNameAlreadyMatched && collected.hits.length < needed && collected.exhausted) {
-      const subjectQueries = variants.map((variant) => ({
-        query: phraseQuery([variant], ["subject"]),
-        match: (doc: Doc) => subjectFieldMatch(doc, [variant]),
-      }));
-      const subjects = await collectSearchHits(subjectQueries, needed, signal, collected.hits);
-      const verified = await verifySubjectHits(subjects.hits, variants, signal);
-      collected = { hits: verified, exhausted: collected.exhausted && subjects.exhausted };
+      const subjects = await collectSearchHits([{
+        query: phraseQuery(variants, ["subject"]),
+        match: (doc) => subjectFieldMatch(doc, variants),
+        verify: (doc) => verifiedSubjectFiles(doc, variants, signal),
+      }], needed, signal, collected.hits);
+      collected = { ...subjects, limited: collected.limited || subjects.limited };
     }
   } else {
     const allFields: SearchQuery = {
@@ -533,6 +546,7 @@ export async function searchTextAlbums(text: string, scope: AlbumSearchScope, pa
   return {
     albums: ranked.slice(start, start + SEARCH_PAGE_SIZE).map(({ doc, match, verifiedFiles }) => toAlbum(doc, match, verifiedFiles)),
     hasMore: ranked.length > start + SEARCH_PAGE_SIZE || !collected.exhausted,
+    limited: collected.limited,
   };
 }
 
@@ -541,6 +555,9 @@ interface FileRow {
   format?: string;
   title?: string;
   creator?: string;
+  artist?: string;
+  original?: string | string[];
+  private?: boolean | string;
   length?: string;
   track?: string;
   size?: string;
@@ -548,8 +565,10 @@ interface FileRow {
 
 interface MetaData {
   title: string;
+  album?: string;
   creator: string;
   files: FileRow[];
+  restricted?: boolean;
 }
 
 const metaCache = new Map<string, Promise<MetaData>>();
@@ -562,7 +581,10 @@ interface AudioFormat {
 function audioFormat(file: FileRow): AudioFormat | null {
   const name = file.name.toLowerCase();
   const format = (file.format ?? "").toLowerCase();
-  if (/\.(?:mp3|mp2)$/i.test(name) || /\b(?:mp3|mpeg(?: layer)? audio)\b/i.test(format)) return { mime: "audio/mpeg", priority: 0 };
+  // IA calls some ZIP bundles "VBR MP3" or "64Kbps MP3". A format label is not proof
+  // that the resource itself is audio; never send containers/playlists to the player.
+  if (/\.(?:zip|rar|7z|tar|gz|m3u8?|pls|torrent|xml|json|jpe?g|png|webp|gif|afpk)$/i.test(name) || /\b(?:zip|rar|playlist)\b/i.test(format)) return null;
+  if (/\.(?:mp3|mp2)$/i.test(name) || /\b(?:mp3|mpeg(?: layer)? audio)\b/i.test(format)) return { mime: "audio/mpeg", priority: /64kbps/i.test(format) ? 0.5 : 0 };
   if (/\.(?:m4a|mp4)$/i.test(name) || /\b(?:m4a|mpeg-?4 audio|aac audio)\b/i.test(format)) return { mime: "audio/mp4", priority: 1 };
   if (/\.aac$/i.test(name) || /\b(?:aac|advanced audio coding)\b/i.test(format)) return { mime: "audio/aac", priority: 2 };
   if (/\.(?:ogg|oga)$/i.test(name) || /\b(?:ogg|vorbis|opus)\b/i.test(format)) return { mime: /opus/i.test(`${name} ${format}`) ? 'audio/ogg; codecs="opus"' : "audio/ogg", priority: 3 };
@@ -577,19 +599,22 @@ interface DirectTrackKey {
   folder: string;
   trackNumber?: number;
   names: string[];
+  original: string;
 }
 
 function directTrackKey(file: FileRow): DirectTrackKey {
   const folder = file.name.includes("/") ? file.name.slice(0, file.name.lastIndexOf("/")) : "";
   const parsedTrack = Number.parseInt(file.track ?? "", 10);
-  const filename = (file.name.split("/").pop() || file.name).replace(/\.[^.]+$/, "");
-  const normalize = (value: string) => cleanTitle(value)
+  const original = typeof file.original === "string" ? file.original : file.original?.length === 1 ? file.original[0] : file.name;
+  const filename = (original || file.name).split("/").pop()!.replace(/\.[^.]+$/, "");
+  const normalize = (value: string) => fixText(value)
     .normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const names = [...new Set([file.title ? normalize(file.title) : "", normalize(filename)].filter(Boolean))];
-  return { folder, trackNumber: Number.isFinite(parsedTrack) ? parsedTrack : undefined, names };
+  return { folder, trackNumber: Number.isFinite(parsedTrack) ? parsedTrack : undefined, names, original: original || file.name };
 }
 
 function sameDirectTrack(a: DirectTrackKey, b: DirectTrackKey): boolean {
+  if (a.original === b.original) return true;
   if (a.folder !== b.folder) return false;
   if (a.trackNumber !== undefined && b.trackNumber !== undefined) return a.trackNumber === b.trackNumber;
   return a.names.some((name) => b.names.includes(name));
@@ -598,6 +623,7 @@ function sameDirectTrack(a: DirectTrackKey, b: DirectTrackKey): boolean {
 function audioFiles(files: FileRow[]): FileRow[] {
   const probe = typeof Audio === "undefined" ? null : new Audio();
   const candidates = files.flatMap((file) => {
+    if (file.private === true || file.private === "true" || file.private === "1") return [];
     const format = audioFormat(file);
     if (!format || (probe && !probe.canPlayType(format.mime))) return [];
     return [{ file, format }];
@@ -617,26 +643,42 @@ function audioFiles(files: FileRow[]): FileRow[] {
   });
 }
 
-async function metadata(id: string, signal?: AbortSignal): Promise<MetaData> {
-  // Запрос с signal не кэшируем: отмена одного компонента не должна ломать результат для остальных.
-  if (signal) {
-    const r = await fetch(`${BASE}/metadata/${encodeURIComponent(id)}`, { signal });
+interface RawMetadata {
+  is_dark?: boolean;
+  metadata?: { title?: string | string[]; creator?: string | string[]; artist?: string | string[]; album?: string | string[]; "access-restricted-item"?: string | boolean };
+  files?: FileRow[];
+}
+function parseMetadata(j: RawMetadata, id: string): MetaData {
+  const restricted = j.is_dark === true || [true, "true", "1"].includes(j.metadata?.["access-restricted-item"] ?? false);
+  return { title: one(j.metadata?.title) || id, album: one(j.metadata?.album) || undefined, creator: one(j.metadata?.creator) || one(j.metadata?.artist), files: Array.isArray(j.files) ? j.files : [], restricted };
+}
+
+async function fetchMetadata(id: string, signal?: AbortSignal): Promise<MetaData> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const r = await fetch(`${BASE}/metadata/${encodeURIComponent(id)}`, { signal: controller.signal });
     if (!r.ok) throw new Error(`Архив ответил ${r.status}`);
-    const j = (await r.json()) as { metadata?: { title?: string | string[]; creator?: string | string[] }; files?: FileRow[] };
-    return { title: one(j.metadata?.title) || id, creator: one(j.metadata?.creator), files: j.files ?? [] };
+    return parseMetadata(await r.json() as RawMetadata, id);
+  } catch (error) {
+    if (controller.signal.aborted && !signal?.aborted) throw new Error("Источник слишком долго отвечает. Попробуйте загрузить релиз ещё раз.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
   }
+}
+
+async function metadata(id: string, signal?: AbortSignal): Promise<MetaData> {
+  // A caller's cancellation must not poison another component's metadata request.
+  if (signal) return fetchMetadata(id, signal);
   let p = metaCache.get(id);
   if (!p) {
-    p = fetch(`${BASE}/metadata/${encodeURIComponent(id)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Архив ответил ${r.status}`);
-        return r.json() as Promise<{ metadata?: { title?: string | string[]; creator?: string | string[] }; files?: FileRow[] }>;
-      })
-      .then((j) => ({ title: one(j.metadata?.title) || id, creator: one(j.metadata?.creator), files: j.files ?? [] }))
-      .catch((e) => {
-        metaCache.delete(id);
-        throw e;
-      });
+    p = fetchMetadata(id).catch((e) => { metaCache.delete(id); throw e; });
+    if (metaCache.size >= 100) metaCache.delete(metaCache.keys().next().value!);
     metaCache.set(id, p);
   }
   return p;
@@ -697,12 +739,45 @@ async function cueAudioTracks(id: string, files: FileRow[], signal?: AbortSignal
   return [];
 }
 
-export async function inspectAlbum(id: string): Promise<{ count: number; cover?: string; source?: "files" | "cd-image" }> {
+export interface AlbumIssue {
+  kind: "archive" | "restricted" | "unsupported" | "empty";
+  label: string;
+  title: string;
+  detail: string;
+}
+export interface AlbumInspection {
+  count: number;
+  cover?: string;
+  source?: "files" | "cd-image";
+  issue?: AlbumIssue;
+}
+export interface AlbumContents {
+  title: string;
+  creator: string;
+  cover?: string;
+  source: "files" | "cd-image";
+  tracks: PlaylistItem[];
+  issue?: AlbumIssue;
+}
+
+function unavailableAudio(meta: MetaData): AlbumIssue {
+  if (meta.restricted || meta.files.some((f) => f.private === true || f.private === "true" || f.private === "1")) {
+    return { kind: "restricted", label: "Ограничен доступ", title: "Источник ограничил доступ", detail: "Карточка есть в каталоге, но аудио не открыто для воспроизведения. Условия доступа можно посмотреть на странице источника." };
+  }
+  const formats = [...new Set(meta.files.map((f) => f.name.match(/\.(rar|zip|7z|tar(?:\.gz)?|tgz)$/i)?.[1]?.toUpperCase()).filter(Boolean))];
+  if (formats.length) return { kind: "archive", label: formats.join(" / "), title: `Аудио упаковано в ${formats.join(" / ")}`, detail: "Источник не выложил отдельные аудиофайлы. Этот плеер не распаковывает архивы. Если у вас есть право скачать запись, откройте источник, распакуйте архив на устройстве и добавьте аудиофайлы через «На устройстве → Добавить файлы»." };
+  if (meta.files.some((f) => audioFormat(f) || /\.(wma|ape|wv|aif|aiff|shn|bin|img|iso|cue)$/i.test(f.name))) {
+    return { kind: "unsupported", label: "Не поддерживается", title: "Нет аудио для этого браузера", detail: "В релизе есть звук или образ диска, но нет поддерживаемой версии либо пригодной разметки CUE. Попробуйте другой релиз или конвертируйте свой файл в MP3, M4A, OGG или WAV перед импортом." };
+  }
+  return { kind: "empty", label: "Нет аудио", title: "В релизе нет доступного аудио", detail: "Карточка найдена, но источник не предоставил аудиофайлы. Посмотрите оригинал или вернитесь к другим результатам." };
+}
+
+export async function inspectAlbum(id: string): Promise<AlbumInspection> {
   const meta = await metadata(id);
   const direct = audioFiles(meta.files);
   if (direct.length) return { count: direct.length, cover: imageUrl(id, meta.files), source: "files" };
   const discTracks = await cueAudioTracks(id, meta.files);
-  return { count: discTracks.length, cover: imageUrl(id, meta.files), source: discTracks.length ? "cd-image" : undefined };
+  return { count: discTracks.length, cover: imageUrl(id, meta.files), source: discTracks.length ? "cd-image" : undefined, issue: discTracks.length ? undefined : unavailableAudio(meta) };
 }
 
 function hash36(s: string): string {
@@ -733,7 +808,7 @@ export async function albumTracks(
   id: string,
   signal?: AbortSignal,
   hint?: Pick<Album, "title" | "creator" | "year">,
-): Promise<{ title: string; creator: string; cover?: string; source: "files" | "cd-image"; tracks: PlaylistItem[] }> {
+): Promise<AlbumContents> {
   const meta = await metadata(id, signal);
   const album = fixText(meta.title) || fixText(hint?.title) || id;
   const creator = fixText(meta.creator) || fixText(hint?.creator);
@@ -742,8 +817,8 @@ export async function albumTracks(
   let discTracks: CueAudioTrack[] = [];
   if (!direct.length) discTracks = await cueAudioTracks(id, meta.files, signal);
 
-  const catalog = (!embeddedCover || discTracks.length)
-    ? await lookupArchiveAlbumBriefly(creator, album, hint?.year, discTracks.length || undefined)
+  const catalog = (direct.length || discTracks.length) && (!embeddedCover || discTracks.length)
+    ? await lookupArchiveAlbumBriefly(creator, fixText(meta.album) || album, hint?.year, discTracks.length || direct.length || undefined)
     : null;
   const cover = embeddedCover || catalog?.cover;
   const tracks: PlaylistItem[] = [];
@@ -787,12 +862,11 @@ export async function albumTracks(
     seen.push(key);
     const catalogNumber = Number.parseInt(file.track ?? "", 10) || index + 1;
     const catalogTrack = catalog?.tracks.find((item) => item.number === catalogNumber) ?? catalog?.tracks[index];
-    const title = fixText(file.title || catalogTrack?.title || cleanTitle(file.name.split("/").pop() || file.name));
-    if (!title) continue;
+    const title = fixText(file.title || catalogTrack?.title || cleanTitle(file.name.split("/").pop() || file.name)) || `Трек ${index + 1}`;
     tracks.push({
       id: `ia-${hash36(`${id}/${file.name}`)}`,
       title,
-      subtitle: fixText(file.creator || catalogTrack?.artist || creator) || undefined,
+      subtitle: fixText(file.creator || file.artist || catalogTrack?.artist || creator) || undefined,
       url: `${BASE}/download/${encodeURIComponent(id)}/${file.name.split("/").map(encodeURIComponent).join("/")}`,
       kind: "vod",
       logo: cover,
@@ -800,8 +874,9 @@ export async function albumTracks(
       duration: seconds(file.length) ?? catalogTrack?.duration,
       size: file.size ? Number(file.size) || undefined : undefined,
       note: album,
+      album,
       addedAt: Date.now(),
     });
   }
-  return { title: album, creator, cover, source: "files", tracks };
+  return { title: album, creator, cover, source: "files", tracks, issue: tracks.length ? undefined : unavailableAudio(meta) };
 }

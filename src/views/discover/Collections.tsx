@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Disc3, Download, ExternalLink, FileAudio, ListMusic, ListPlus, Loader2, Pause, Play, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
-import type { PlaylistItem } from "../../lib/types";
 import type { ViewProps } from "../shared";
-import { ARCHIVE_GENRES, COLLECTIONS, COLLECTION_GROUPS, albumTracks, findArchiveGenre, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope, type ArchiveGenre } from "../../lib/archive";
+import { ARCHIVE_GENRES, COLLECTIONS, COLLECTION_GROUPS, albumTracks, findArchiveGenre, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope, type AlbumContents, type AlbumInspection, type ArchiveGenre } from "../../lib/archive";
 import { searchOpenverseTracks } from "../../lib/openverse";
 import { searchCommonsTracks } from "../../lib/commons";
 import { genreSearchTerm, type DiscoveredMusicTrack, type DiscoveredMusicProvider } from "../../lib/discoveredMusic";
@@ -40,7 +39,7 @@ function AlbumCover({ album, size }: { album: Pick<Album, "title" | "cover">; si
 /** Строка результата сама выясняет, это один трек или настоящий сборник. */
 function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
-  const [info, setInfo] = useState<{ count: number; cover?: string; source?: "files" | "cd-image" } | null>(album.trackCount !== undefined ? { count: album.trackCount, cover: album.cover } : null);
+  const [info, setInfo] = useState<(AlbumInspection & { failed?: boolean }) | null>(album.trackCount !== undefined ? { count: album.trackCount, cover: album.cover } : null);
 
   useEffect(() => {
     if (info !== null) return;
@@ -53,7 +52,7 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
         io.disconnect();
         void inspectAlbum(album.id)
           .then((n) => !cancelled && setInfo(n))
-          .catch(() => !cancelled && setInfo({ count: 0 }));
+          .catch(() => !cancelled && setInfo({ count: 0, failed: true }));
       },
       { rootMargin: "180px" }
     );
@@ -65,7 +64,7 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
   }, [album.id, info]);
 
   return (
-    <button ref={ref} onClick={onOpen} className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2">
+    <button ref={ref} onClick={onOpen} data-archive-album={album.id} className="archive-album-row flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-surface-2">
       <AlbumCover album={{ ...album, cover: info?.cover || album.cover }} size={48} />
       <span className="min-w-0 flex-1">
         <span className="line-clamp-2 text-[15px] font-semibold leading-snug">{album.title}</span>
@@ -86,7 +85,7 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
           </span>
         ) : info.count <= 1 ? (
           <span className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-2 py-1 text-xs font-semibold text-muted">
-            <FileAudio size={12} /> <span className="hidden sm:inline">{info.count ? "1 трек" : "нет аудио"}</span>
+            <FileAudio size={12} /> <span>{info.count ? "1 трек" : info.failed ? "Не проверено" : info.issue?.label || "Нет аудио"}</span>
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-md bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
@@ -164,8 +163,9 @@ function CollectionCard({ c, onClick }: { c: (typeof COLLECTIONS)[number]; onCli
 
 function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => void; onPlay: ViewProps["onPlay"] }) {
   const p = usePlayer();
-  const [data, setData] = useState<{ title: string; creator: string; cover?: string; source: "files" | "cd-image"; tracks: PlaylistItem[] } | null>(null);
+  const [data, setData] = useState<AlbumContents | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [selecting, setSelecting] = useState(false);
   const [visibleCount, setVisibleCount] = useState(180);
@@ -180,11 +180,11 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
         if (c.signal.aborted) return;
         setData(d);
         setSel(new Set());
-        if (!d.tracks.length) setErr("Не нашёл поддерживаемых аудиофайлов или разметки .cue для CD-образа.");
+
       })
       .catch((e) => !c.signal.aborted && setErr(e instanceof Error ? e.message : "Не удалось загрузить сборник"));
     return () => c.abort();
-  }, [album.id]);
+  }, [album.id, retry]);
 
   useEffect(() => () => player.clearSourceContext({ kind: "album", title: album.title }), [album.id, album.title]);
 
@@ -259,20 +259,23 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
           <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Альбом</span>
           <span className="h-10 w-10" />
         </div>
-        <div className="relative mx-auto mt-4 aspect-square w-[min(48vw,180px)] md:ml-0 md:mr-0 md:w-48">
+        <div className="album-summary">
+        <div className="album-art">
           <Cover s={{ name: data?.title || album.title, logo: data?.cover || album.cover, kind: "vod", icon: "g:music" }} size="fill" className="rounded-2xl shadow-2xl" eager fit="cover" />
         </div>
-        <div className="relative mt-5 md:absolute md:bottom-7 md:left-[15rem] md:right-8 md:mt-0">
-          <h2 className="line-clamp-2 font-display text-2xl font-bold leading-[1.1] tracking-tight md:text-3xl">{data?.title ?? album.title}</h2>
+        <div className="album-copy">
+          <h2 className="font-display font-bold leading-tight tracking-tight">{data?.title ?? album.title}</h2>
           <p className="mt-1 line-clamp-1 text-sm text-muted">{data?.creator || album.creator || "Исполнитель не указан"}</p>
           <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span className="inline-flex items-center gap-1 rounded-md bg-surface/80 px-2 py-1 font-semibold text-ink backdrop-blur">
               {tracks.length === 1 ? <FileAudio size={12} /> : <ListMusic size={12} />}
-              {tracks.length === 1 ? "1 запись" : tracks.length ? `${tracks.length} треков` : "Загружаем"}
+              {tracks.length === 1 ? "1 запись" : tracks.length ? `${tracks.length} треков` : err ? "Ошибка загрузки" : data ? data.issue?.label || "Нет аудио" : "Загружаем"}
             </span>
             {[album.year, `${fmtNum(album.downloads)} скачиваний`].filter(Boolean).join(" · ")}
           </p>
-          {tracks.length > 0 && <div className="mt-4 space-y-2">
+        </div>
+        </div>
+          {tracks.length > 0 && <div className="album-actions mt-4 space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => play(0)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-accent-ink shadow-lg shadow-accent/20"><Play size={17} className="fill-current" /> Слушать</button>
               <button onClick={addAll} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-surface px-3 text-sm font-semibold text-ink ring-1 ring-line"><ListPlus size={17} /> Добавить альбом</button>
@@ -282,7 +285,6 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
               <button onClick={() => setSelecting(true)} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-muted transition hover:bg-surface hover:text-ink"><Check size={15} /> Выбрать треки</button>
             </div>
           </div>}
-        </div>
       </section>
 
       {data?.source === "cd-image" && <div className="mx-4 mt-3 flex items-start gap-2 rounded-xl bg-accent/8 p-3 text-xs leading-relaxed text-muted">
@@ -301,7 +303,19 @@ function AlbumPanel({ album, onClose, onPlay }: { album: Album; onClose: () => v
             <Loader2 size={18} className="animate-spin" /> Загружаем список треков…
           </div>
         )}
-        {err && <div className="m-2 rounded-xl bg-bad/10 p-4 text-sm text-bad">{err}</div>}
+        {err && <div role="alert" className="album-availability m-2 rounded-xl bg-bad/10 p-4 text-sm">
+          <h3 className="font-semibold text-bad">Не удалось загрузить релиз</h3>
+          <p className="mt-2 text-muted">{err}</p>
+          <button className={btnGhost + " mt-3"} onClick={() => setRetry((n) => n + 1)}>Повторить загрузку</button>
+        </div>}
+        {data?.issue && <section className="album-availability m-2 rounded-xl border border-line bg-surface p-4 text-sm" aria-label="Доступность релиза">
+          <h3 className="font-semibold">{data.issue.title}</h3>
+          <p className="mt-2 leading-relaxed text-muted">{data.issue.detail}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <a className={btnPrimary} href={`https://archive.org/details/${encodeURIComponent(album.id)}`} target="_blank" rel="noreferrer"><ExternalLink size={16}/> Открыть источник</a>
+            <button className={btnGhost} onClick={onClose}>К результатам</button>
+          </div>
+        </section>}
         <ul>
           {visibleTracks.map((t, i) => {
             const cur = p.station?.id === itemStationId(t.id);
@@ -359,6 +373,7 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
   const [externalTracks, setExternalTracks] = useState<DiscoveredMusicTrack[]>([]);
   const [page, setPage] = useState(1);
   const [more, setMore] = useState(false);
+  const [limited, setLimited] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Album | null>(null);
@@ -372,6 +387,7 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
     retryPage.current = pg;
     setLoading(true);
     setError(null);
+    setLimited(false);
     try {
       const selectedProvider = a.provider ?? "archive";
       if (selectedProvider !== "archive") {
@@ -391,6 +407,7 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
         setAlbums((prev) => (pg === 1 ? result.albums : [...prev, ...result.albums.filter((album) => !prev.some((item) => item.id === album.id))]));
         setExternalTracks([]);
         setMore(result.hasMore);
+        setLimited(!!result.limited);
       }
       setPage(pg);
     } catch (e) {
@@ -485,25 +502,7 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
     );
 
   const search = (
-    <div className="space-y-2.5">
-      <div role="group" aria-label="Тип поиска" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1">
-        <button
-          type="button"
-          aria-pressed={scope === "artist"}
-          onClick={() => switchScope("artist")}
-          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "artist" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
-        >
-          По исполнителю
-        </button>
-        <button
-          type="button"
-          aria-pressed={scope === "all"}
-          onClick={() => switchScope("all")}
-          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "all" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
-        >
-          По названию / жанру
-        </button>
-      </div>
+    <div className="music-query-controls space-y-2.5">
       <form
         role="search"
         aria-label="Поиск музыки офлайн"
@@ -531,10 +530,28 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
             </button>
           )}
         </div>
-        <button type="submit" className={btnPrimary} disabled={!textQuery(text, scope)}>
-          <SearchIcon size={16} /> Найти
+        <button type="submit" aria-label="Найти" className={btnPrimary + " music-search-submit"} disabled={!textQuery(text, scope)}>
+          <SearchIcon size={18} /> <span>Найти</span>
         </button>
       </form>
+      <div role="group" aria-label="Тип поиска" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-2 p-1">
+        <button
+          type="button"
+          aria-pressed={scope === "artist"}
+          onClick={() => switchScope("artist")}
+          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "artist" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
+        >
+          По исполнителю
+        </button>
+        <button
+          type="button"
+          aria-pressed={scope === "all"}
+          onClick={() => switchScope("all")}
+          className={cn("min-h-9 rounded-lg px-2.5 py-2 text-xs font-semibold transition sm:text-sm", scope === "all" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink")}
+        >
+          По названию / жанру
+        </button>
+      </div>
       <p className="music-search-explanation text-xs leading-relaxed text-muted">
         {scope === "artist"
           ? "Сначала ищем по исполнителю, затем по названию и тематическим меткам. Совпадения в метках подписаны; жанр можно написать по-русски или выбрать ниже."
@@ -582,7 +599,8 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
 
   return (
     <div className="music-discovery space-y-5">
-      <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
+      <div className="music-search-card space-y-3 rounded-2xl border border-line bg-surface p-4">
+        {search}
         <div className="music-source-heading">
           <p className="min-w-0 flex-1 text-sm leading-relaxed">
             <b>{provider === "archive" ? "Песни и альбомы." : "Отдельные аудиотреки."}</b> {provider === "archive" ? "Ищите в коллекциях Internet Archive." : "Ищите по исполнителю, названию или жанру."} Офлайн-загрузка зависит от лицензии и доступа к файлу.
@@ -597,10 +615,8 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
             <option value="openverse">Openverse</option>
             <option value="commons">Commons</option>
           </select>
-        </div>
-        {search}
         <details className="music-search-rights text-xs leading-relaxed text-muted">
-          <summary>Проверяйте права перед скачиванием</summary>
+          <summary>О каталоге</summary>
           <p className="flex items-start gap-2 mt-2"><ShieldAlert size={15} className="mt-0.5 shrink-0" />
           {provider === "archive"
             ? "Internet Archive — открытая библиотека: права на записи остаются у правообладателей. Сохраняйте только то, что вам разрешено."
@@ -609,6 +625,8 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
               : "Wikimedia Commons: условия лицензии и возможность скачивания различаются для каждого файла. Проверьте страницу оригинала."}
           </p>
         </details>
+        </div>
+
       </div>
 
       {!active ? (
@@ -667,21 +685,23 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
         )
       ) : (
         <>
-          <div className="flex items-center gap-3">
+          <div className="music-results-heading flex items-center gap-3">
             <button
               onClick={clearSearch}
+              aria-label="Коллекции"
               className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold text-muted transition hover:text-ink"
             >
-              <ArrowLeft size={17} /> Коллекции
+              <ArrowLeft size={17} /> <span className="hidden sm:inline">Коллекции</span>
             </button>
             <h2 className="min-w-0 truncate font-display text-xl font-semibold tracking-tight">{active.title}</h2>
-          </div>
-          <p role="status" aria-live="polite" className="px-1 text-xs text-muted">
+          <p role="status" aria-live="polite" className="music-results-count text-xs text-muted">
             {loading
               ? provider === "archive" ? "Ищем и отсекаем аудиокниги…" : "Ищем аудиотреки…"
-              : `Подходящих ${provider === "archive" ? "записей" : "треков"}: ${provider === "archive" ? albums.length : externalTracks.length}${more ? "+" : ""}`}
+              : `Найдено ${provider === "archive" ? "релизов" : "треков"}: ${provider === "archive" ? albums.length : externalTracks.length}${more ? "+" : ""}`}
           </p>
+          </div>
 
+          {limited && <p role="status" className="text-xs text-muted">Достигнут предел проверки большого каталога. Уточните название или исполнителя, чтобы найти остальные записи.</p>}
           {error && (
             <div className="flex items-center gap-3 rounded-xl bg-bad/10 p-4 text-sm text-bad">
               <span className="flex-1">Не удалось связаться с {provider === "archive" ? "Internet Archive" : provider === "openverse" ? "Openverse" : "Wikimedia Commons"}: {error}</span>
@@ -765,6 +785,10 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
               </button>
             </div>
           )}
+          {!loading && !error && active.scope === "artist" && !more && <details className="music-catalog-note text-xs leading-relaxed text-muted">
+            <summary>Почему здесь не вся дискография?</summary><p>
+            {provider === "archive" ? "Это релизы из Archive.org, не полная дискография. В одном релизе может быть несколько песен; архивы RAR/ZIP нельзя включить напрямую." : "Это результаты открытого каталога, не полная дискография исполнителя. Можно переключить источник, сохранив запрос."}
+          </p></details>}
         </>
       )}
 

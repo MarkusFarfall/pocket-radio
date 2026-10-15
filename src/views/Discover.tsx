@@ -61,13 +61,13 @@ export function Discover({ stations, online, onPlay }: ViewProps) {
       <div className="design-page-heading">
         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">Обзор</h1>
         <p className="text-sm text-muted">Радиостанции, подкасты, готовые подборки и музыка, которую можно скачать и слушать без интернета</p>
-      </div>
-      <label className="relative block md:hidden">
-        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted">Раздел обзора</span>
+      <label className="discover-mobile-picker relative block md:hidden">
+        <span className="sr-only">Раздел обзора</span>
         <select value={sub} onChange={(e) => pick(e.target.value as Sub)} className="w-full rounded-xl border border-line bg-surface px-3.5 py-3 text-[15px] font-semibold outline-none focus:border-accent focus:ring-2 focus:ring-accent/20">
           {TABS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select>
       </label>
+      </div>
       <div className="discover-tabs hidden w-full min-w-0 overflow-x-auto pb-1 md:block" data-discover-tabs role="region" aria-label="Разделы обзора">
         <div className="flex w-max gap-1 rounded-xl bg-surface-2 p-1">
           {TABS.map(([id, label, I]) => (

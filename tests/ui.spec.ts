@@ -71,7 +71,13 @@ test("mobile catalog and Discover fit narrow viewports", async ({ page }) => {
     const sectionSelect = page.getByLabel("Раздел обзора");
     await expect(sectionSelect).toBeVisible();
     const selectBox = await sectionSelect.boundingBox();
-    expect(selectBox?.width ?? 0).toBeGreaterThan(width - 72);
+    // Browse now shares a compact row with its section picker rather than using a second full row.
+    const titleBox = await page.locator(".discover-page h1").boundingBox();
+    expect(selectBox!.width).toBeGreaterThanOrEqual(160);
+    expect(selectBox!.height).toBeGreaterThanOrEqual(44);
+    expect(selectBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width);
+    expect(selectBox!.x + selectBox!.width).toBeLessThanOrEqual(width - 12);
+    expect(Math.abs(selectBox!.y + selectBox!.height / 2 - titleBox!.y - titleBox!.height / 2)).toBeLessThan(2);
     await expectNoHorizontalPageOverflow(page);
   }
 });
