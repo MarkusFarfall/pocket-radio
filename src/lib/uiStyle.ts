@@ -112,27 +112,25 @@ export const radiusPx = (r: Radius, base = 12) => Math.round(base * RADIUS_FACTO
 const KEY = "pr.ui";
 const KEY_VARS = "pr.uiv";
 
+export function normalizeUiPrefs(value: unknown): UiPrefs {
+  const v = value && typeof value === "object" ? value as Partial<UiPrefs> : {};
+  const has = <T extends string>(list: readonly (readonly [T, string])[], x: unknown): x is T => list.some(([id]) => id === x);
+  return {
+    radius: has(UI_OPTIONS.radius, v.radius) ? v.radius : DEFAULT_UI.radius,
+    density: has(UI_OPTIONS.density, v.density) ? v.density : DEFAULT_UI.density,
+    scale: UI_OPTIONS.scale.some(([s]) => s === v.scale) ? (v.scale as number) : DEFAULT_UI.scale,
+    font: has(UI_OPTIONS.font, v.font) ? v.font : DEFAULT_UI.font,
+    surface: has(UI_OPTIONS.surface, v.surface) ? v.surface : DEFAULT_UI.surface,
+    cover: has(UI_OPTIONS.cover, v.cover) ? v.cover : DEFAULT_UI.cover,
+    nav: has(UI_OPTIONS.nav, v.nav) ? v.nav : DEFAULT_UI.nav,
+    reduceMotion: typeof v.reduceMotion === "boolean" ? v.reduceMotion : DEFAULT_UI.reduceMotion,
+    glow: typeof v.glow === "boolean" ? v.glow : DEFAULT_UI.glow,
+  };
+}
+
 function read(): UiPrefs {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<UiPrefs> | null;
-    if (v) {
-      const has = <T extends string>(list: readonly (readonly [T, string])[], x: unknown): x is T => list.some(([id]) => id === x);
-      return {
-        radius: has(UI_OPTIONS.radius, v.radius) ? v.radius : DEFAULT_UI.radius,
-        density: has(UI_OPTIONS.density, v.density) ? v.density : DEFAULT_UI.density,
-        scale: UI_OPTIONS.scale.some(([s]) => s === v.scale) ? (v.scale as number) : DEFAULT_UI.scale,
-        font: has(UI_OPTIONS.font, v.font) ? v.font : DEFAULT_UI.font,
-        surface: has(UI_OPTIONS.surface, v.surface) ? v.surface : DEFAULT_UI.surface,
-        cover: has(UI_OPTIONS.cover, v.cover) ? v.cover : DEFAULT_UI.cover,
-        nav: has(UI_OPTIONS.nav, v.nav) ? v.nav : DEFAULT_UI.nav,
-        reduceMotion: !!v.reduceMotion,
-        glow: !!v.glow,
-      };
-    }
-  } catch {
-    /* повреждённая запись */
-  }
-  return { ...DEFAULT_UI };
+  try { return normalizeUiPrefs(JSON.parse(localStorage.getItem(KEY) ?? "null")); }
+  catch { return { ...DEFAULT_UI }; }
 }
 
 let prefs = read();
@@ -161,7 +159,7 @@ export function applyUi() {
 }
 
 export function setUiPrefs(patch: Partial<UiPrefs>) {
-  prefs = { ...prefs, ...patch };
+  prefs = normalizeUiPrefs({ ...prefs, ...patch });
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));
   } catch {

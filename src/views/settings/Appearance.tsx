@@ -57,11 +57,11 @@ export function Appearance() {
         </>
       )}
       {sub === "style" && <>
-        <button onClick={() => pick("player")} className="mb-6 flex w-full items-center justify-between gap-4 rounded-2xl border border-accent/30 bg-accent/5 p-4 text-left hover:bg-accent/10">
+        <StyleSection />
+        <button onClick={() => pick("player")} className="mt-6 flex w-full items-center justify-between gap-4 rounded-2xl border border-accent/30 bg-accent/5 p-4 text-left hover:bg-accent/10">
           <span><span className="block font-display text-lg font-semibold">Шаблоны плеера</span><span className="mt-1 block text-sm text-muted">6 готовых образов · анимации · телефон и компьютер</span></span>
           <span aria-hidden="true" className="text-2xl text-accent">→</span>
         </button>
-        <StyleSection />
       </>}
       {sub === "player" && <PlayerAppearanceSection />}
     </>

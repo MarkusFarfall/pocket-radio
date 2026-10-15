@@ -50,11 +50,11 @@ export function StationCard({ station, queue, online, cached, onPlay, onMore, se
   return (
     <div
       className={cn(
-        "motion-card group relative flex flex-col gap-3 rounded-2xl border bg-surface p-2.5 pb-3 transition",
+        "station-card motion-card group relative flex flex-col gap-3 rounded-2xl border bg-surface p-2.5 pb-3 transition",
         selected ? "border-accent ring-2 ring-accent/30" : st.current ? "border-accent/50" : "border-line hover:border-ink/25"
       )}
     >
-      <div className="relative aspect-square w-full">
+      <div className="station-card-art relative aspect-square w-full">
         <button onClick={click} className="block h-full w-full" aria-label={selectMode ? `Выбрать ${station.name}` : `Играть ${station.name}`}>
           <Cover s={station} size="fill" className={cn("rounded-xl", off && "opacity-50 grayscale")} spin={st.active} />
         </button>
@@ -99,7 +99,7 @@ export function StationCard({ station, queue, online, cached, onPlay, onMore, se
           </span>
         )}
       </div>
-      <div className="flex items-start gap-1 px-1">
+      <div className="station-card-copy flex items-start gap-1 px-1">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-semibold leading-tight">{station.name}</div>
           <div className="mt-0.5 truncate text-xs text-muted">{[station.genre, station.city].filter(Boolean).join(" · ") || "Без категории"}</div>
@@ -131,7 +131,7 @@ export function StationLine({ station, queue, online, cached, onPlay, onMore, se
   return (
     <div
       className={cn(
-        "group flex items-center gap-3 rounded-xl border bg-surface p-2 pr-3 transition hover:bg-surface-2",
+        "station-line group flex items-center gap-3 rounded-xl border bg-surface p-2 pr-3 transition hover:bg-surface-2",
         selected ? "border-accent ring-2 ring-accent/25" : st.current ? "border-accent/50" : "border-line"
       )}
     >
@@ -158,10 +158,10 @@ export function StationLine({ station, queue, online, cached, onPlay, onMore, se
           </div>
         </div>
       </button>
-      <div className="hidden w-36 shrink-0 truncate text-sm text-muted xl:block">{station.genre || "—"}</div>
-      <div className="hidden w-36 shrink-0 truncate text-sm text-muted xl:block">{station.city || "—"}</div>
-      <div className="hidden w-20 shrink-0 text-right font-mono text-xs text-muted xl:block">{station.totalSeconds >= 60 ? fmtDuration(station.totalSeconds, true) : "—"}</div>
-      <div className="hidden shrink-0 items-center gap-1.5 md:flex">
+      <div className="station-line-extra hidden w-36 shrink-0 truncate text-sm text-muted xl:block">{station.genre || "—"}</div>
+      <div className="station-line-extra hidden w-36 shrink-0 truncate text-sm text-muted xl:block">{station.city || "—"}</div>
+      <div className="station-line-extra hidden w-20 shrink-0 text-right font-mono text-xs text-muted xl:block">{station.totalSeconds >= 60 ? fmtDuration(station.totalSeconds, true) : "—"}</div>
+      <div className="station-line-extra hidden shrink-0 items-center gap-1.5 md:flex">
         <KindBadge kind={station.kind} />
         {cached && <Download size={14} className="text-ok" />}
         <HealthBadge s={station} />

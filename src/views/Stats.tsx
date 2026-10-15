@@ -70,7 +70,7 @@ function StatCard({ icon: Icon, label, value, detail }: {
   detail: string;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-line bg-surface p-4">
+    <div className="stats-metric min-w-0 rounded-2xl border border-line bg-surface p-4">
       <div className="flex items-center gap-2 text-xs font-semibold text-muted">
         <Icon size={15} className="shrink-0 text-accent" />
         <span>{label}</span>
@@ -315,8 +315,8 @@ export function Stats({ stations }: { stations: Station[] }) {
   const hasListening = data.totalSeconds > 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 pb-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="stats-page mx-auto max-w-6xl space-y-5 pb-8">
+      <header className="design-page-heading flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-accent">
             <Activity size={14} /> Личные данные
@@ -331,7 +331,7 @@ export function Stats({ stations }: { stations: Station[] }) {
               type="button"
               onClick={() => setPeriod(item.value)}
               aria-pressed={period === item.value}
-              className={`min-h-10 flex-1 rounded-xl px-3 text-xs font-semibold transition sm:flex-none ${period === item.value ? "bg-accent text-white shadow-sm" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
+              className={`min-h-10 flex-1 rounded-xl px-3 text-xs font-semibold transition sm:flex-none ${period === item.value ? "bg-accent text-accent-ink shadow-sm" : "text-muted hover:bg-surface-2 hover:text-ink"}`}
             >
               {item.label}
             </button>
@@ -379,7 +379,7 @@ export function Stats({ stations }: { stations: Station[] }) {
       </section>}
 
       {hasListening ? <>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <div className="stats-metrics grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <StatCard icon={CalendarDays} label="Активные дни" value={formatCount(data.activeDays)} detail="≥5 мин в день" />
           <StatCard icon={Radio} label="Сессии" value={formatCount(data.sessionCount)} detail={`${formatCount(data.stationCount)} ${pluralRu(data.stationCount, "уникальная станция", "уникальные станции", "уникальных станций")}`} />
           <StatCard icon={Clock3} label="Средняя сессия" value={fmtDuration(Math.round(data.averageSessionSeconds / 60) * 60, true)} detail="в выбранном периоде" />

@@ -1,3 +1,4 @@
+import { useAppDesign, type AppDesign } from "../lib/appDesign";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -58,13 +59,22 @@ function plural(n: number, a: string, b: string, c: string) {
 
 export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, onScan, onDemo }: ViewProps) {
   const p = usePlayer();
+  const design = useAppDesign();
   const [q, setQ] = useState("");
   const [dim, setDim] = useState<Dim>("genre");
   const [filters, setFilters] = useState<Partial<Record<Dim, string>>>({});
   const [favOnly, setFavOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<Sort>("added");
-  const [view, setView] = useState<"grid" | "list">(() => (localStorage.getItem("radio.view") as "grid" | "list") || "grid");
+  const [views, setViews] = useState<Partial<Record<AppDesign, "grid" | "list">>>(() => {
+    const found: Partial<Record<AppDesign, "grid" | "list">> = {};
+    for (const id of ["classic", "editorial", "library", "console"] as const) {
+      const v = localStorage.getItem(id === "classic" ? "radio.view" : `radio.view.${id}`);
+      if (v === "grid" || v === "list") found[id] = v;
+    }
+    return found;
+  });
+  const view = views[design] ?? (design === "console" ? "list" : "grid");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [checking, setChecking] = useState<{ done: number; total: number } | null>(null);
@@ -112,8 +122,8 @@ export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, on
   const chosen = stations.filter((s) => selected.has(s.id));
 
   const setViewMode = (v: "grid" | "list") => {
-    setView(v);
-    localStorage.setItem("radio.view", v);
+    setViews(previous => ({ ...previous, [design]: v }));
+    localStorage.setItem(design === "classic" ? "radio.view" : `radio.view.${design}`, v);
   };
   const toggleSel = (s: Station) =>
     setSelected((prev) => {
@@ -152,8 +162,8 @@ export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, on
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="catalog-page space-y-4">
+      <div className="design-page-heading flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">Каталог</h1>
           <p className="text-sm text-muted">
@@ -201,7 +211,7 @@ export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, on
         </div>
       ) : (
         <>
-          <div className="sticky top-0 z-10 -mx-4 bg-bg/90 px-4 pb-2 pt-2 backdrop-blur-xl md:-mx-8 md:px-8">
+          <div className="catalog-toolbar sticky top-0 z-10 -mx-4 bg-bg/90 px-4 pb-2 pt-2 backdrop-blur-xl md:-mx-8 md:px-8">
             <div className="flex flex-wrap gap-2">
               <div className="relative min-w-0 basis-full flex-1 sm:basis-auto">
                 <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
@@ -303,13 +313,13 @@ export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, on
 
           {list.length ? (
             view === "grid" ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-4 2xl:grid-cols-6">
+              <div className="catalog-grid grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4 xl:grid-cols-4 2xl:grid-cols-6">
                 {list.map((s) => (
                   <StationCard key={s.id} station={s} queue={queue} online={online} cached={cachedIds.has(s.id)} onPlay={onPlay} onMore={onMore} selectMode={selectMode} selected={selected.has(s.id)} onToggleSelect={toggleSel} />
                 ))}
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="catalog-list space-y-2">
                 {list.map((s) => (
                   <StationLine key={s.id} station={s} queue={queue} online={online} cached={cachedIds.has(s.id)} onPlay={onPlay} onMore={onMore} selectMode={selectMode} selected={selected.has(s.id)} onToggleSelect={toggleSel} />
                 ))}

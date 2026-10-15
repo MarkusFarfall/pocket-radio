@@ -1,3 +1,4 @@
+import { resetAppDesign } from "../../lib/appDesign";
 import { useEffect, useState } from "react";
 import { CircleAlert, CircleCheck, Database, RotateCcw, Share, ShieldCheck, Smartphone } from "lucide-react";
 import { btnGhost, btnPrimary } from "../../components/ui";
@@ -165,6 +166,7 @@ export function Device() {
           <button
             className={btnGhost}
             onClick={() => {
+              resetAppDesign();
               resetUi();
               setThemePrefs({ mode: "system", light: "paper", dark: "charcoal", accent: null });
               setPlayerAppearance({ skin: "classic", layout: "focus", motion: "calm", colorWash: true });

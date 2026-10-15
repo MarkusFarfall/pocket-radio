@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { ChevronRight, FileUp, Keyboard, MoreHorizontal, Plus, Wifi, WifiOff } from "lucide-react";
 import type { Draft, Station } from "./lib/types";
@@ -27,6 +28,9 @@ import { OfflineOfferModal, RecoveryOfferModal } from "./components/OfflineOffer
 import { AccountCard, AccountModal, Avatar } from "./components/AccountUI";
 import { AccountMenu } from "./components/AccountMenu";
 import { Logo } from "./components/Logo";
+import { useAppDesign } from "./lib/appDesign";
+import { ExperienceShell } from "./components/ExperienceShell";
+import { ExperienceHome } from "./views/ExperienceHome";
 import { Studio } from "./desktop/Studio";
 import { HomeStudio } from "./desktop/HomeStudio";
 import { Home } from "./views/Home";
@@ -40,6 +44,8 @@ import type { Tab, ViewProps } from "./views/shared";
 export default function App() {
   const auth = useAuth();
   const ui = useUiPrefs();
+  const design = useAppDesign();
+  const [pageHost] = useState(() => { const el = document.createElement("div"); el.className = "global-page-host"; return el; });
   const dp = useDesktopPrefs();
   const isDesktop = useIsDesktop();
   const history = useTabHistory(getAppPrefs().startTab);
@@ -72,7 +78,7 @@ export default function App() {
   const previousTab = useRef(tab);
   const tabScrollPositions = useRef(new Map<Tab, number>());
 
-  const studio = isDesktop && dp.shell === "studio";
+  const studio = design === "classic" && isDesktop && dp.shell === "studio";
 
   useEffect(() => {
     setVisitedTabs((visited) => visited.has(tab) ? visited : new Set(visited).add(tab));
@@ -83,7 +89,7 @@ export default function App() {
   useLayoutEffect(() => {
     const main = mainRef.current;
     if (main) main.scrollTop = tabScrollPositions.current.get(tab) ?? 0;
-  }, [tab]);
+  }, [tab, design]);
 
   const rememberMainScroll = useCallback((event: UIEvent<HTMLElement>) => {
     tabScrollPositions.current.set(tab, event.currentTarget.scrollTop);
@@ -218,7 +224,9 @@ export default function App() {
   const contentFor = (pageTab: Tab) => !loaded ? (
     <div className="py-24 text-center text-sm text-muted">Загрузка…</div>
   ) : pageTab === "home" ? (
-    studio ? (
+    design !== "classic" ? (
+      <ExperienceHome {...view} design={design} />
+    ) : studio ? (
       <HomeStudio {...view} />
     ) : (
       <Home {...view} />
@@ -243,6 +251,9 @@ export default function App() {
       ))}
     </div>
   );
+
+  const pagePortal = createPortal(page, pageHost, "workspace-pages");
+  const pageMount = <PageMount host={pageHost} />;
 
   const overlays = (
     <>
@@ -317,6 +328,12 @@ export default function App() {
     </>
   );
 
+  if (design !== "classic") return <>
+    <ExperienceShell design={design} tab={tab} onTab={setTab} online={online} stationCount={stations.length} mainRef={mainRef} onScroll={rememberMainScroll} onAdd={openAdd} onAccount={() => auth.user ? setAccountOpen(true) : auth.openAuth()} onPlayer={() => setPlayerOpen(true)} back={history.back} forward={history.forward} canBack={history.canBack} canForward={history.canForward}>{pageMount}</ExperienceShell>
+    {overlays}
+    {pagePortal}
+  </>;
+
   /* ------------------------- компоновка «Студия» (компьютер) ------------------------- */
   if (studio) {
     return (
@@ -339,9 +356,10 @@ export default function App() {
           onQr={setQrStation}
           style={glow}
         >
-          {page}
+          {pageMount}
         </Studio>
         {overlays}
+        {pagePortal}
       </>
     );
   }
@@ -364,6 +382,7 @@ export default function App() {
   );
 
   return (
+    <>
     <div id="app-shell" className="flex h-dvh overflow-hidden bg-bg text-ink">
       {layout === "sidebar" && (
         <aside className="hidden w-64 shrink-0 flex-col border-r border-line bg-surface/60 p-5 lg:flex xl:w-72">
@@ -475,7 +494,7 @@ export default function App() {
         )}
 
         <main ref={mainRef} onScroll={rememberMainScroll} className={cn("min-h-0 flex-1 overflow-y-auto px-4 md:px-8 lg:px-10", hasPlayer ? "pb-44 lg:pb-10" : "pb-28 lg:pb-10")}>
-          <div className="mx-auto max-w-[1480px] py-5 md:py-8">{page}</div>
+          <div className="mx-auto max-w-[1480px] py-5 md:py-8">{pageMount}</div>
         </main>
 
         {/* Док-плеер (компьютер) */}
@@ -519,7 +538,21 @@ export default function App() {
           </div>
         </nav>
       </div>
-      {overlays}
     </div>
+    {overlays}
+    {pagePortal}
+    </>
   );
+}
+
+
+function PageMount({ host }: { host: HTMLDivElement }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const mount = ref.current;
+    if (!mount) return;
+    mount.appendChild(host);
+    return () => { if (host.parentNode === mount) mount.removeChild(host); };
+  }, [host]);
+  return <div ref={ref} className="design-page-mount" />;
 }

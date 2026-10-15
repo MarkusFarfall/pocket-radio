@@ -57,8 +57,8 @@ function Card({ pl, off, onOpen }: { pl: Playlist; off: Set<string>; onOpen: () 
   const secs = playlistSeconds(pl);
 
   return (
-    <div className="motion-card group overflow-hidden rounded-2xl border border-line bg-surface p-3 transition hover:border-ink/25">
-      <div className="relative aspect-[16/11] w-full sm:aspect-square">
+    <div className="playlist-card motion-card group overflow-hidden rounded-2xl border border-line bg-surface p-3 transition hover:border-ink/25">
+      <div className="playlist-card-art relative aspect-[16/11] w-full sm:aspect-square">
         <button onClick={onOpen} className="block h-full w-full" aria-label={`Открыть «${pl.name}»`}>
           <PlCover p={pl} size="fill" />
         </button>
@@ -81,7 +81,7 @@ function Card({ pl, off, onOpen }: { pl: Playlist; off: Set<string>; onOpen: () 
           {playing ? <Pause size={19} className="fill-current" /> : <Play size={19} className="ml-0.5 fill-current" />}
         </button>
       </div>
-      <button onClick={onOpen} className="mt-3 block w-full min-w-0 px-0.5 text-left">
+      <button onClick={onOpen} className="playlist-card-copy mt-3 block w-full min-w-0 px-0.5 text-left">
         <div className="flex items-center gap-2">
           <span className="line-clamp-2 font-display text-base font-semibold leading-tight">{pl.name}</span>
           {playing && <Equalizer active className="h-3 shrink-0 text-accent" />}
@@ -183,8 +183,8 @@ function Detail({ pl, off, online, onBack, onEdit }: { pl: Playlist; off: Set<st
         <ArrowLeft size={17} /> Все плейлисты
       </button>
 
-      <div className="flex flex-col gap-6 sm:flex-row">
-        <div className="mx-auto aspect-square w-48 shrink-0 sm:mx-0 sm:w-52 lg:w-60">
+      <div className="playlist-detail-header flex flex-col gap-6 sm:flex-row">
+        <div className="playlist-detail-art mx-auto aspect-square w-48 shrink-0 sm:mx-0 sm:w-52 lg:w-60">
           <PlCover p={pl} size="fill" />
         </div>
         <div className="min-w-0 flex-1">
@@ -550,8 +550,8 @@ export function Playlists({ online, go }: ViewProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="playlists-page space-y-6">
+      <div className="design-page-heading flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">Плейлисты</h1>
           <p className="text-sm text-muted">
@@ -636,7 +636,7 @@ export function Playlists({ online, go }: ViewProps) {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 min-[430px]:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+        <div className="playlist-grid grid grid-cols-1 gap-4 min-[430px]:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {visible.map((l) => (
             <Card key={l.id} pl={l} off={off} onOpen={() => setOpenId(l.id)} />
           ))}

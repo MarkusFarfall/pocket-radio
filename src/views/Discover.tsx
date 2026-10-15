@@ -1,3 +1,4 @@
+import { useAppDesign } from "../lib/appDesign";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Disc3, FileText, Globe2, Mic2, Package, type LucideIcon } from "lucide-react";
 import type { ViewProps } from "./shared";
@@ -18,6 +19,7 @@ const TABS: [Sub, string, LucideIcon][] = [
 ];
 
 export function Discover({ stations, online, onPlay }: ViewProps) {
+  const design = useAppDesign();
   const root = useRef<HTMLDivElement>(null);
   const [sub, setSub] = useState<Sub>(() => {
     const saved = localStorage.getItem("radio.discoverTab");
@@ -42,12 +44,12 @@ export function Discover({ stations, online, onPlay }: ViewProps) {
     const remember = () => subScrollPositions.current.set(currentSub.current, scroller.scrollTop);
     scroller.addEventListener("scroll", remember, { passive: true });
     return () => scroller.removeEventListener("scroll", remember);
-  }, []);
+  }, [design]);
 
   useLayoutEffect(() => {
     const scroller = root.current?.closest("main");
     if (scroller) scroller.scrollTop = subScrollPositions.current.get(sub) ?? 0;
-  }, [sub]);
+  }, [sub, design]);
 
   const pick = (s: Sub) => {
     if (s !== sub) window.dispatchEvent(new Event("pr:tabchange"));
@@ -55,8 +57,8 @@ export function Discover({ stations, online, onPlay }: ViewProps) {
     localStorage.setItem("radio.discoverTab", s);
   };
   return (
-    <div ref={root} className="space-y-5">
-      <div>
+    <div ref={root} className="discover-page space-y-5">
+      <div className="design-page-heading">
         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">Обзор</h1>
         <p className="text-sm text-muted">Радиостанции, подкасты, готовые подборки и музыка, которую можно скачать и слушать без интернета</p>
       </div>

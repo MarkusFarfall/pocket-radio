@@ -1,3 +1,5 @@
+import { AppDesignSection } from "./AppDesignSection";
+import { useAppDesign } from "../lib/appDesign";
 import { Check, RotateCcw } from "lucide-react";
 import { DEFAULT_UI, UI_OPTIONS, UI_PRESETS, fontStack, matchPreset, radiusPx, resetUi, setUiPrefs, useUiPrefs, type UiPrefs, type UiPreset } from "../lib/uiStyle";
 import { cn } from "../utils/cn";
@@ -67,12 +69,16 @@ function PresetCard({ p, on }: { p: UiPreset; on: boolean }) {
 /** Стили интерфейса: готовые образы и тонкая настройка формы, плотности, шрифта, карточек и расположения меню. */
 export function StyleSection() {
   const ui = useUiPrefs();
+  const design = useAppDesign();
   const cur = matchPreset(ui);
   const changed = JSON.stringify(ui) !== JSON.stringify(DEFAULT_UI);
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <AppDesignSection />
+      <details className="design-advanced mt-8 rounded-2xl border border-line p-4">
+      <summary className="cursor-pointer font-semibold">Тонкая настройка и прежние наборы формы</summary>
+      <div className="mb-3 mt-5 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted">Стиль меняет форму интерфейса: скругления, плотность, шрифт, вид карточек, обложек и меню.{!cur && " Сейчас — ваши собственные настройки."}</p>
         {changed && (
           <button className={btnGhost + " !py-1.5 text-sm"} onClick={resetUi}>
@@ -106,17 +112,18 @@ export function StyleSection() {
         <Row title="Форма обложек" stack>
           <Seg label="Форма обложек" value={ui.cover} options={UI_OPTIONS.cover} onChange={(v) => setUiPrefs({ cover: v })} />
         </Row>
-        <DesktopRows />
-        <Row title="Меню на компьютере" desc="Только в компоновке «Классика». На телефоне всегда нижняя панель." stack>
+        {design === "classic" && <DesktopRows />}
+        {design === "classic" && <Row title="Меню на компьютере" desc="Только в компоновке «Классика». На телефоне всегда нижняя панель." stack>
           <Seg label="Меню на компьютере" value={ui.nav} options={UI_OPTIONS.nav} onChange={(v) => setUiPrefs({ nav: v })} />
-        </Row>
-        <Row title="Свечение под станцию" desc="Фон слегка окрашивается в цвет играющей станции.">
+        </Row>}
+        {design === "classic" && <Row title="Свечение под станцию" desc="Фон слегка окрашивается в цвет играющей станции.">
           <Toggle checked={ui.glow} onChange={(v) => setUiPrefs({ glow: v })} label="Свечение под станцию" />
-        </Row>
+        </Row>}
         <Row title="Меньше анимаций" desc="Отключает движение: эквалайзер, переходы, вращение обложек. Экономит батарею.">
           <Toggle checked={ui.reduceMotion} onChange={(v) => setUiPrefs({ reduceMotion: v })} label="Меньше анимаций" />
         </Row>
       </div>
+      </details>
     </div>
   );
 }

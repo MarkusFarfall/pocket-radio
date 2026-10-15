@@ -4,6 +4,8 @@ import "./index.css";
 import "./ui-styles.css";
 import "./player-templates.css";
 import "./player-experiences.css";
+import "./app-designs.css";
+import "./lib/appDesign";
 // применяют сохранённые стиль интерфейса и логотип до первой отрисовки
 import "./lib/uiStyle";
 import "./lib/appPrefs";

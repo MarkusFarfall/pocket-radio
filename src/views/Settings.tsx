@@ -36,6 +36,7 @@ const INDEX: Entry[] = [
   E("profile", "Облако", "синхронизация supabase сервер облачный устройства"),
   E("appearance", "Светлая или тёмная", "тема режим ночной тёмная светлая системная", "colors"),
   E("appearance", "Палитры и цвета", "палитра акцент цвет оттенок тема", "colors"),
+  E("appearance", "Интерфейсы приложения", "глобальный стиль дизайн редакция медиатека пульт шаблоны", "style"),
   E("appearance", "Скругления", "форма углы радиус острые круглые", "style"),
   E("appearance", "Плотность", "расстояния компактно просторно отступы", "style"),
   E("appearance", "Размер интерфейса", "масштаб крупный мелкий текст зум", "style"),
@@ -91,6 +92,8 @@ function focusRow(title: string) {
   window.setTimeout(() => {
     const el = Array.from(document.querySelectorAll<HTMLElement>("[data-row]")).find((e) => e.dataset.row === title);
     if (!el) return;
+    let parent = el.parentElement;
+    while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.classList.remove("row-flash");
     void el.offsetWidth;
@@ -173,7 +176,7 @@ export function Settings({ stations, online, onAccount }: { stations: Station[];
   );
 
   const menu = desktop ? (
-    <ul className="space-y-1">
+    <ul className="settings-section-menu space-y-1">
       {SECTIONS.map((s) => {
         const on = active === s.id;
         return (
@@ -209,10 +212,10 @@ export function Settings({ stations, online, onAccount }: { stations: Station[];
   const showMenuColumn = desktop || !active;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="settings-page mx-auto max-w-5xl">
       {showMenuColumn && <h1 className="mb-5 font-display text-3xl font-bold tracking-tight md:text-4xl">Настройки</h1>}
 
-      <div className="lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] lg:gap-10">
+      <div className="settings-workspace lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)] lg:gap-10">
         {showMenuColumn && (
           <nav className="self-start lg:sticky lg:top-1" aria-label="Разделы настроек">
             {searchBox}
