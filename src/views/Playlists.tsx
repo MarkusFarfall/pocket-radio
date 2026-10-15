@@ -577,7 +577,7 @@ export function Playlists({ online, go }: ViewProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
+      <div className="playlist-quick-actions grid grid-cols-3 gap-2 sm:grid-cols-3">
         <button disabled={busy} onClick={() => fileRef.current?.click()} className="group rounded-2xl border border-line bg-surface p-3 text-left transition hover:border-ink/30 sm:p-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-surface-2 text-ink transition group-hover:bg-accent group-hover:text-accent-ink">
             {busy ? <Loader2 size={17} className="animate-spin" /> : <FileUp size={18} />}

@@ -21,7 +21,7 @@
           var root = document.documentElement;
           if (dark) root.classList.add("dark");
           var design = localStorage.getItem("pr.appDesign");
-          root.dataset.appDesign = ["editorial", "library", "console"].includes(design) ? design : "classic";
+          root.dataset.appDesign = ["editorial", "library", "console", "panorama", "focus", "atelier", "nocturne"].includes(design) ? design : "classic";
           // палитра и акцент, выбранные в настройках: применяем до первой отрисовки, чтобы не мигала другая тема
           // стиль интерфейса (скругления, плотность, шрифт, вид карточек)
           var uv = JSON.parse(localStorage.getItem("pr.uiv") || "null");

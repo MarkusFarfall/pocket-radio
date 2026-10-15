@@ -28,8 +28,9 @@ import { OfflineOfferModal, RecoveryOfferModal } from "./components/OfflineOffer
 import { AccountCard, AccountModal, Avatar } from "./components/AccountUI";
 import { AccountMenu } from "./components/AccountMenu";
 import { Logo } from "./components/Logo";
-import { useAppDesign } from "./lib/appDesign";
+import { isPremiumDesign, useAppDesign } from "./lib/appDesign";
 import { ExperienceShell } from "./components/ExperienceShell";
+import { PremiumHome } from "./views/PremiumHome";
 import { ExperienceHome } from "./views/ExperienceHome";
 import { Studio } from "./desktop/Studio";
 import { HomeStudio } from "./desktop/HomeStudio";
@@ -224,7 +225,9 @@ export default function App() {
   const contentFor = (pageTab: Tab) => !loaded ? (
     <div className="py-24 text-center text-sm text-muted">Загрузка…</div>
   ) : pageTab === "home" ? (
-    design !== "classic" ? (
+    isPremiumDesign(design) ? (
+      <PremiumHome {...view} design={design} />
+    ) : design !== "classic" ? (
       <ExperienceHome {...view} design={design} />
     ) : studio ? (
       <HomeStudio {...view} />

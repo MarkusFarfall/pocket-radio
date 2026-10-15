@@ -23,6 +23,10 @@ function pal(id: string, name: string, hint: string, dark: boolean, c: C): Palet
 }
 
 export const PALETTES: Palette[] = [
+  // Neutral foundations for the premium compositions; selectable independently.
+  pal("porcelain", "Фарфор", "чистый мягкий белый", false, ["#f6f7f8", "#ffffff", "#eceff1", "#e0e4e7", "#202529", "#697178", "#2d504b", "#ffffff"]),
+  pal("linen", "Лён", "тёплые нейтральные поверхности", false, ["#f5f3ef", "#fdfcf9", "#ece8e1", "#dfd9d0", "#302b26", "#756d64", "#71533f", "#ffffff"]),
+  pal("graphite", "Тёмный графит", "мягкий вечерний чёрный", true, ["#111315", "#1a1d20", "#24282c", "#32373c", "#f0f0ed", "#a1a8ac", "#d8d2c4", "#202326"]),
   // светлые
   pal("paper", "Бумага", "тёплый off-white", false, ["#f6f4ef", "#ffffff", "#eeebe4", "#e1ddd3", "#1b1a17", "#77726a", "#e4532b", "#ffffff"]),
   pal("snow", "Снег", "холодный белый", false, ["#f3f5f8", "#ffffff", "#e8ecf2", "#d9dfe8", "#151a22", "#64707f", "#3366e0", "#ffffff"]),

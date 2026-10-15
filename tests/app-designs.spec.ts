@@ -57,7 +57,7 @@ for (const width of [320, 768, 1024, 1440]) {
         await fit(page);
       }
       await appearance(page);
-      await expect(page.getByRole("button", { name: /^Интерфейс «/ })).toHaveCount(4);
+      await expect(page.getByRole("button", { name: /^Интерфейс «/ })).toHaveCount(8);
       for (const card of await page.locator(".app-design-card").all()) {
         await card.scrollIntoViewIfNeeded();
         const box = await card.boundingBox();

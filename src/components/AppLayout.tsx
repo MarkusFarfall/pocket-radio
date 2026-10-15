@@ -1,12 +1,14 @@
 import type { ReactNode, Ref, UIEventHandler } from "react";
-import type { AppDesign } from "../lib/appDesign";
+import { PremiumLayout } from "./PremiumLayout";
+import { isPremiumDesign, type AppDesign } from "../lib/appDesign";
 
 /** Shared structure for live shells and inert, scaled settings previews. */
-export function AppLayout({ design, brand, navigation, toolbar, children, player, aside, mainRef, onScroll, preview = false }: {
+export function AppLayout({ design, brand, navigation, toolbar, children, player, aside, collection, mainRef, onScroll, preview = false }: {
   design: Exclude<AppDesign, "classic">; brand: ReactNode; navigation: ReactNode; toolbar: ReactNode;
-  children: ReactNode; player?: ReactNode; aside?: ReactNode; mainRef?: Ref<HTMLElement>;
+  children: ReactNode; player?: ReactNode; aside?: ReactNode; collection?: ReactNode; mainRef?: Ref<HTMLElement>;
   onScroll?: UIEventHandler<HTMLElement>; preview?: boolean;
 }) {
+  if (isPremiumDesign(design)) return <PremiumLayout {...{ design, brand, navigation, toolbar, children, player, collection, mainRef, onScroll, preview }} />;
   return <div id={preview ? undefined : "app-shell"} className={`app-layout app-layout-${design}${preview ? " app-layout-preview" : ""}`} data-app-layout={design}>
     <div className="app-layout-grid">
       {design === "editorial" ? <>

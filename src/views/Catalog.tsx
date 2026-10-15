@@ -1,4 +1,4 @@
-import { useAppDesign, type AppDesign } from "../lib/appDesign";
+import { APP_DESIGNS, useAppDesign, type AppDesign } from "../lib/appDesign";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -68,13 +68,13 @@ export function Catalog({ stations, online, cachedIds, onPlay, onMore, onAdd, on
   const [sort, setSort] = useState<Sort>("added");
   const [views, setViews] = useState<Partial<Record<AppDesign, "grid" | "list">>>(() => {
     const found: Partial<Record<AppDesign, "grid" | "list">> = {};
-    for (const id of ["classic", "editorial", "library", "console"] as const) {
+    for (const { id } of APP_DESIGNS) {
       const v = localStorage.getItem(id === "classic" ? "radio.view" : `radio.view.${id}`);
       if (v === "grid" || v === "list") found[id] = v;
     }
     return found;
   });
-  const view = views[design] ?? (design === "console" ? "list" : "grid");
+  const view = views[design] ?? ((design === "console" || design === "focus") ? "list" : "grid");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [checking, setChecking] = useState<{ done: number; total: number } | null>(null);
