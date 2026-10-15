@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { CheckCircle2, Info, TriangleAlert, X } from "lucide-react";
 import { cn } from "../utils/cn";
 import { dismissToast, useToasts } from "../lib/toast";
+import { dropStep, pushStep, type NavStep } from "../lib/appHistory";
 
 export { Cover } from "./Cover";
 
@@ -39,6 +40,25 @@ export function Modal({
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const stepRef = useRef<NavStep | null>(null);
+  // Системная «назад» на телефоне закрывает модальное окно, а не приложение.
+  useEffect(() => {
+    if (open && !stepRef.current) {
+      stepRef.current = pushStep(() => {
+        stepRef.current = null;
+        closeRef.current();
+      }, undefined, true);
+    } else if (!open && stepRef.current) {
+      dropStep(stepRef.current);
+      stepRef.current = null;
+    }
+  }, [open]);
+  useEffect(() => () => {
+    if (stepRef.current) {
+      dropStep(stepRef.current);
+      stepRef.current = null;
+    }
+  }, []);
   useEffect(() => {
     const closeOnNavigation = () => closeRef.current();
     window.addEventListener("pr:tabchange", closeOnNavigation);

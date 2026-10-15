@@ -11,7 +11,7 @@ import { getAppPrefs } from "./lib/appPrefs";
 import { useUiPrefs } from "./lib/uiStyle";
 import { getDesktopPrefs, setDesktopPrefs, useDesktopPrefs, useIsDesktop } from "./lib/desktop";
 import { NAV } from "./lib/nav";
-import { useTabHistory } from "./lib/useTabHistory";
+import { initBackNav, useBackNav, useTabNav } from "./lib/appHistory";
 import { useHotkeys } from "./lib/useHotkeys";
 import { gotoPlaylist } from "./lib/picker";
 import { useFileDrop } from "./lib/useFileDrop";
@@ -49,7 +49,8 @@ export default function App() {
   const [pageHost] = useState(() => { const el = document.createElement("div"); el.className = "global-page-host"; return el; });
   const dp = useDesktopPrefs();
   const isDesktop = useIsDesktop();
-  const history = useTabHistory(getAppPrefs().startTab);
+  const history = useTabNav(getAppPrefs().startTab);
+  const nav = useBackNav();
   const { tab, go: setTab } = history;
   const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set([tab]));
   const renderedTabs = new Set(visitedTabs);
@@ -80,6 +81,10 @@ export default function App() {
   const tabScrollPositions = useRef(new Map<Tab, number>());
 
   const studio = design === "classic" && isDesktop && dp.shell === "studio";
+
+  useEffect(() => {
+    initBackNav(() => toast("Нажмите «назад» ещё раз, чтобы закрыть приложение", "info"));
+  }, []);
 
   useEffect(() => {
     setVisitedTabs((visited) => visited.has(tab) ? visited : new Set(visited).add(tab));
@@ -130,13 +135,13 @@ export default function App() {
     const h = location.hash;
     if (h.startsWith("#add=")) {
       const d = parseShare(h);
-      window.history.replaceState(null, "", location.pathname + location.search);
+      window.history.replaceState(window.history.state, "", location.pathname + location.search);
       if (d) {
         openDraft(d);
         toast("Станция из ссылки — проверьте данные и сохраните", "info");
       } else toast("Не удалось прочитать ссылку на станцию", "error");
     } else if (h === "#new") {
-      window.history.replaceState(null, "", location.pathname + location.search);
+      window.history.replaceState(window.history.state, "", location.pathname + location.search);
       openAdd();
     }
   }, [openAdd, openDraft]);
@@ -168,8 +173,8 @@ export default function App() {
     openAdd,
     openHelp: () => setHelpOpen(true),
     goTab: setTab,
-    back: history.back,
-    forward: history.forward,
+    back: nav.back,
+    forward: nav.forward,
     togglePanel: () => {
       if (player.getState().station) setDesktopPrefs({ panel: !getDesktopPrefs().panel });
     },
@@ -332,7 +337,7 @@ export default function App() {
   );
 
   if (design !== "classic") return <>
-    <ExperienceShell design={design} tab={tab} onTab={setTab} online={online} stationCount={stations.length} mainRef={mainRef} onScroll={rememberMainScroll} onAdd={openAdd} onAccount={() => auth.user ? setAccountOpen(true) : auth.openAuth()} onPlayer={() => setPlayerOpen(true)} back={history.back} forward={history.forward} canBack={history.canBack} canForward={history.canForward}>{pageMount}</ExperienceShell>
+    <ExperienceShell design={design} tab={tab} onTab={setTab} online={online} stationCount={stations.length} mainRef={mainRef} onScroll={rememberMainScroll} onAdd={openAdd} onAccount={() => auth.user ? setAccountOpen(true) : auth.openAuth()} onPlayer={() => setPlayerOpen(true)} back={nav.back} forward={nav.forward} canBack={nav.canBack} canForward={nav.canForward}>{pageMount}</ExperienceShell>
     {overlays}
     {pagePortal}
   </>;
@@ -344,10 +349,10 @@ export default function App() {
         <Studio
           tab={tab}
           onTab={setTab}
-          back={history.back}
-          forward={history.forward}
-          canBack={history.canBack}
-          canForward={history.canForward}
+          back={nav.back}
+          forward={nav.forward}
+          canBack={nav.canBack}
+          canForward={nav.canForward}
           stations={stations}
           online={online}
           onPlay={onPlay}

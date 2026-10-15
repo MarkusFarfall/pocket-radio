@@ -208,6 +208,11 @@ function searchVariants(text: string): string[] {
   });
 }
 
+/** Варианты написания: оригинал, известные алиасы (Земфира/Zemfira) и транслитерация. */
+export function artistSearchVariants(text: string): string[] {
+  return searchVariants(text);
+}
+
 function phraseQuery(variants: string[], fields: SearchField[]): string {
   return `(${variants.flatMap((phrase) => fields.map((field) => `${field}:"${phrase}"`)).join(" OR ")})`;
 }
@@ -220,6 +225,14 @@ export function textQuery(text: string, scope: AlbumSearchScope = "artist"): str
   const variants = searchVariants(text);
   if (!variants.length) return "";
   return phraseQuery(variants, scope === "artist" ? ["creator", "title"] : ["creator", "title", "subject"]);
+}
+
+/** Запрос конкретного релиза: исполнитель и название проверяются отдельно, а не одной фразой. */
+export function releaseLookupQuery(artist: string, title: string): string {
+  const artistVariants = searchVariants(artist);
+  const titleVariants = searchVariants(title).filter((variant) => variant.length > 1);
+  if (!artistVariants.length || !titleVariants.length) return "";
+  return `(${phraseQuery(artistVariants, ["creator", "title", "subject"])} AND ${phraseQuery(titleVariants, ["title", "subject"])})`;
 }
 
 interface Doc {

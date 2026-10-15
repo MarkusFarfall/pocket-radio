@@ -154,3 +154,32 @@
   .music-results-heading > button { flex-shrink: 0; min-width: 44px; justify-content: center; padding-inline: 8px; }
   .music-results-count { font-size: .65rem; }
 }
+
+/* ---------------------------------------- дискография исполнителя ---------------------------------------- */
+.discography-panel { overflow: hidden; }
+.discography-panel h3 { overflow-wrap: anywhere; }
+.discography-panel > div > button[aria-expanded] { min-height: 44px; align-items: center; }
+.discography-group h4 { letter-spacing: .06em; }
+.discography-release > span:nth-of-type(2) { min-width: 0; }
+.discography-release + span { white-space: normal; }
+.discography-panel li > button { min-height: 60px; }
+@media(max-width:479px) {
+  /* Заголовок дискографии получает свою строку, иначе он обрезается до «Диско…». */
+  .discography-panel > div { flex-wrap: wrap; }
+  .discography-panel > div > button[aria-expanded] { flex: 1 0 100%; }
+  .discography-panel > div > span[data-discography-source] { margin-left: 25px; padding: 4px 6px; font-size: .65rem; }
+  .discography-panel > div > button[aria-label="Обновить дискографию"] { padding-inline: 8px; }
+}
+@media(max-width:767px) {
+  .discography-panel { border-radius: 14px; }
+  .discography-panel > div { padding: 8px 10px; gap: 6px; }
+  .discography-panel > div > button[aria-expanded] h3 { font-size: .92rem; }
+  .discography-group { border-radius: 12px; }
+  .discography-release { gap: 10px; padding: 8px; }
+  .discography-release > span:nth-of-type(2) > span:first-of-type { font-size: .95rem; }
+  .discography-release > span:nth-of-type(2) > span:nth-of-type(2) { font-size: .68rem; }
+  .discography-panel p { font-size: .68rem; }
+}
+@media(max-width:360px) {
+  .discography-release > span:nth-of-type(1) { width: 38px; height: 38px; }
+}
