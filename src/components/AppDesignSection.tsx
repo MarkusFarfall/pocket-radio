@@ -46,6 +46,6 @@ export function AppDesignSection() {
     <div className="app-design-intro"><span>POCKET RADIO / НОВАЯ КОМПОЗИЦИЯ</span><h3 id="app-design-title">Один мир музыки.<br/>Разные интерфейсы.</h3><p>Меняются навигация, главная, каталог, плейлисты, рабочие панели и связанный плеер. Не только цвет или скругления.</p></div>
     <div className="premium-design-group"><h4 className="premium-design-group-heading">Спокойные пространства <span>4 новых</span></h4><div className="app-design-cards">{APP_DESIGNS.filter(t => isPremiumDesign(t.id)).map(card)}</div></div>
     <div className="premium-design-group"><h4 className="premium-design-group-heading">Другие интерфейсы</h4><div className="app-design-cards">{APP_DESIGNS.filter(t => !isPremiumDesign(t.id)).map(card)}</div></div>
-    <p className="app-design-note">Схематические предпросмотры с демонстрационными данными. Выбор применяется сразу и сохраняется на устройстве. Масштаб и «Меньше анимаций» сохраняются; станции, плейлисты и EQ не меняются. «Классика» возвращает предыдущее оформление. Цвета и стиль плеера можно затем настроить отдельно.</p>
+    <p className="app-design-note">Схематические предпросмотры с демонстрационными данными. Выбор применяется сразу и сохраняется на устройстве. Масштаб и «Меньше анимаций» сохраняются; станции, плейлисты и EQ не меняются. «Классика» возвращает предыдущее оформление. Плеер следует интерфейсу во всех размерах. Цвета можно настроить отдельно; независимые шаблоны плеера доступны в Классике.</p>
   </section>;
 }

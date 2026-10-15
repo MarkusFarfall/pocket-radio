@@ -4,6 +4,8 @@ import { PLAYER_LAYOUTS, PLAYER_MOTIONS, PLAYER_TEMPLATES, DEFAULT_PLAYER_APPEAR
 import { cn } from "../utils/cn";
 import { Toggle } from "./ui";
 import { PlayerTemplatePreview } from "./PlayerScene";
+import { APP_DESIGNS, applyAppDesign, useAppDesign } from "../lib/appDesign";
+import { AppPlayerPreview } from "./AppPlayerPreview";
 import { Row } from "../views/settings/parts";
 
 function LayoutPreview({ id, active }: { id: PlayerLayout; active: boolean }) {
@@ -35,9 +37,22 @@ function MotionPreview({ id }: { id: PlayerMotion }) {
 
 export function PlayerAppearanceSection() {
   const p = usePlayerAppearance();
+  const design = useAppDesign();
   const current = matchPlayerTemplate(p);
   const skin = PLAYER_TEMPLATES.find((x) => x.id === p.skin)!;
   const [desktop, setDesktop] = useState(false);
+  if (design !== "classic") {
+    const template = APP_DESIGNS.find(t => t.id === design)!;
+    return <section className="ap-linked-settings" data-row="Шаблоны плеера" aria-labelledby="linked-player-title">
+      <span className="text-xs text-accent">Единый интерфейс</span>
+      <h3 id="linked-player-title" className="mt-2">Плеер — {template.name}</h3>
+      <p>Полноэкранный плеер, мини-плеер и нижняя панель следуют выбранному интерфейсу. Цвета, шрифты, кнопки и компоновка согласованы с приложением. Смена палитры применяется и к плееру.</p>
+      <div className="ap-linked-settings-tools" role="group" aria-label="Формат предпросмотра"><button onClick={() => setDesktop(false)} aria-pressed={!desktop}>Телефон</button><button onClick={() => setDesktop(true)} aria-pressed={desktop}>Компьютер</button></div>
+      <AppPlayerPreview design={design} desktop={desktop}/>
+      <p>Схематический предпросмотр с демонстрационными данными. Отдельные винил, кассетник и другие независимые шаблоны остаются доступны в Классике.</p>
+      <div className="ap-linked-settings-tools"><button onClick={() => applyAppDesign("classic")}>Перейти в Классику для отдельного плеера</button></div>
+    </section>;
+  }
   return (
     <div className="space-y-7 player-appearance-settings">
       <section data-row="Шаблоны плеера" aria-labelledby="player-templates-title">

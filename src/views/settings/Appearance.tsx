@@ -1,3 +1,4 @@
+import { useAppDesign } from "../../lib/appDesign";
 import { useState } from "react";
 import { Laptop, Moon, Sun, type LucideIcon } from "lucide-react";
 import { PaletteSection } from "../../components/PaletteSection";
@@ -21,6 +22,7 @@ const MODES: [ThemeMode, string, LucideIcon][] = [
 ];
 
 export function Appearance() {
+  const design = useAppDesign();
   const [sub, setSub] = useState<Sub>(() => {
     const saved = sessionStorage.getItem("pr.appearanceTab");
     return TABS.some(([id]) => id === saved) ? (saved as Sub) : "colors";
@@ -59,7 +61,7 @@ export function Appearance() {
       {sub === "style" && <>
         <StyleSection />
         <button onClick={() => pick("player")} className="mt-6 flex w-full items-center justify-between gap-4 rounded-2xl border border-accent/30 bg-accent/5 p-4 text-left hover:bg-accent/10">
-          <span><span className="block font-display text-lg font-semibold">Шаблоны плеера</span><span className="mt-1 block text-sm text-muted">6 готовых образов · анимации · телефон и компьютер</span></span>
+          <span><span className="block font-display text-lg font-semibold">Шаблоны плеера</span><span className="mt-1 block text-sm text-muted">{design === "classic" ? "6 готовых образов · анимации · телефон и компьютер" : "Плеер в стиле интерфейса · телефон и компьютер"}</span></span>
           <span aria-hidden="true" className="text-2xl text-accent">→</span>
         </button>
       </>}

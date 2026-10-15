@@ -1,0 +1,197 @@
+/* Application-linked players: no --bg/--accent overrides from independent skins. */
+.app-player-experience { container: app-player / inline-size; min-height: 100%; background: var(--bg); color: var(--ink); font-family: var(--ui-font); }
+.ap-layout { padding: max(14px,env(safe-area-inset-top)) 18px max(28px,env(safe-area-inset-bottom)); min-width: 0; }
+.ap-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.ap-header > button { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; flex-shrink: 0; }
+.ap-header > span { font-size: .6rem; color: var(--muted); text-align: center; letter-spacing: .07em; }
+.ap-header i { display: block; font-size: .55rem; font-style: normal; margin-top: 4px; }
+.ap-identity { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 20px 0; font-size: .63rem; color: var(--muted); }
+.ap-identity > span:first-child { font-size: .9rem; font-weight: 650; letter-spacing: -.04em; color: var(--ink); }
+.ap-identity > span:last-child { text-align: right; }
+.ap-feedback:empty { display: none; }
+.ap-feedback:not(:empty) { margin-bottom: 18px; }
+.app-player-experience button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.ap-artwork { aspect-ratio: 1; width: min(100%,clamp(150px,26vh,260px)); margin: 0 auto; border-radius: 18px; overflow: hidden; background: var(--surface-2); box-shadow: 0 12px 40px #0000000b; }
+.ap-artwork > .cover { height: 100%; width: 100%; border-radius: inherit !important; }
+.ap-copy { min-width: 0; margin-top: 20px; }
+.ap-copy h2 { font-family: var(--ui-display); font-size: clamp(1.45rem,4.4cqw,2.8rem); font-weight: 600; line-height: 1.13; letter-spacing: -.045em; overflow-wrap: anywhere; margin: 10px 0; }
+.ap-subtitle { color: var(--muted); font-size: .75rem; line-height: 1.6; overflow-wrap: anywhere; }
+.ap-status { color: var(--accent); font-size: .6rem; letter-spacing: .06em; }
+.ap-source:empty { display: none; }
+.ap-source > button { font-size: .65rem; min-height: 36px; margin-top: 12px; margin-inline: 0; background: transparent; }
+.ap-timeline { min-width: 0; margin: 22px 0 16px; }
+.ap-timeline .font-mono { font-family: var(--ui-font); font-variant-numeric: tabular-nums; font-size: .62rem; }
+.ap-timeline .slider { min-height: 28px; cursor: pointer; }
+.ap-transport { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 0; }
+.ap-transport > button, .ap-transport > .ap-demo-button { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 48px; min-height: 48px; padding: 10px; border-radius: 50%; color: var(--ink); flex-shrink: 0; }
+.ap-transport > :not(.ex-primary) > span { display: none; }
+.ap-transport > .ex-primary { min-height: 56px; min-width: 56px; background: var(--ink); color: var(--bg); }
+.ap-transport > .ex-primary > span { display: none; }
+.ap-transport > button:not(.ex-primary):hover { background: var(--surface-2); }
+.ap-tools { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; min-width: 0; padding: 16px 0; }
+.ap-tools > button, .ap-tools > .ap-demo-tool { min-width: 44px; min-height: 44px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; padding: 6px; border-radius: 12px; font-size: .55rem; color: var(--muted); }
+.ap-tools > div { flex-shrink: 0; }
+.ap-tools > div > button { min-width: 44px; min-height: 44px; }
+.ap-tools > button[aria-pressed="true"] { color: var(--accent); }
+.ap-tools > button:hover { background: var(--surface-2); color: var(--ink); }
+.ap-queue { min-width: 0; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.ap-queue .ex-queue-heading { gap: 14px; flex-wrap: wrap; }
+.ap-queue .ex-queue-heading h3 { font-family: var(--ui-display); font-size: .95rem; font-weight: 600; }
+.ap-queue .ex-queue-heading > span { font-family: var(--ui-font); font-size: .6rem; color: var(--muted); }
+.ap-queue ol { padding: 0; list-style: none; }
+.ap-queue li + li { border-top: 1px solid var(--line); }
+.ap-queue li > button, .ap-queue .ap-demo-track { display: flex; width: 100%; min-height: 56px; align-items: center; gap: 12px; padding: 12px 4px; text-align: left; }
+.ap-queue li > button:hover { background: var(--surface-2); border-radius: 10px; }
+.ap-queue li svg { flex-shrink: 0; }
+.ap-queue .ex-queue-index { font-family: var(--ui-font); font-variant-numeric: tabular-nums; }
+.ap-queue .ex-queue-copy strong { font-size: .72rem; }
+.ap-queue .ex-queue-copy small { font-size: .6rem; }
+.app-player-experience .ex-live { font-family: var(--ui-font); font-size: .62rem; color: var(--muted); letter-spacing: .03em; }
+.app-player-experience .ex-rates button { font-family: var(--ui-font); border-radius: 14px; }
+
+/* Panorama: a large artwork paired with an airy listening area; queue below. */
+[data-app-player="panorama"] .ap-panorama-stage { display: grid; gap: 4px; }
+[data-app-player="panorama"] .ap-listening { min-width: 0; }
+[data-app-player="panorama"] .ap-artwork { border-radius: 24px; }
+
+/* Focus: compact artwork/title band and a narrow, centered control surface. */
+.ap-focus-content { max-width: 680px; margin: auto; }
+.ap-focus-band { display: flex; align-items: center; gap: 20px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; }
+.ap-focus-band .ap-artwork { width: 76px; flex-shrink: 0; border-radius: 12px; }
+.ap-focus-band .ap-copy { margin: 0; }
+.ap-focus-band h2 { font-size: 1.2rem; }
+.ap-focus-band .ap-source > button { padding-inline: 8px; }
+.ap-focus-content .ap-controls { padding-top: 10px; }
+[data-app-player="focus"] .ap-identity { max-width: 680px; margin-inline: auto; }
+[data-app-player="focus"] .ap-queue { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+
+/* Atelier: an album sleeve, not a vinyl deck. Warmth comes from the app palette. */
+.ap-album-spread { display: grid; gap: 12px; background: var(--surface-2); padding: 22px; border-radius: 20px; }
+.ap-album-sleeve { padding: 8px; min-width: 0; }
+.ap-album-sleeve .ap-artwork { border-radius: 8px; box-shadow: 8px 8px 0 color-mix(in srgb,var(--ink) 7%,var(--surface)),0 15px 30px #00000012; }
+.ap-album-spread .ap-tools { justify-content: flex-start; padding-bottom: 0; }
+.ap-album-strip { padding: 4px 0 0; }
+
+/* Nocturne: a quiet cinema stage and a low, rounded control island. */
+.ap-nocturne-stage { display: grid; align-items: center; gap: 4px; }
+.ap-nocturne-stage .ap-copy { text-align: center; }
+.ap-nocturne-stage .ap-source { display: flex; justify-content: center; }
+.ap-nocturne-stage h2 { font-weight: 450; }
+.ap-nocturne-dock { margin-top: 22px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 24px; }
+.ap-nocturne-dock .ap-timeline { margin-bottom: 0; }
+.ap-nocturne-dock .ap-tools { padding-bottom: 0; }
+
+/* The first three global interfaces have matching players too. */
+[data-app-player="editorial"] .ap-identity { border-bottom: 2px solid var(--ink); margin-bottom: 24px; }
+.ap-editorial-spread { display: grid; gap: 18px; }
+.ap-editorial-spread .ap-copy { margin: 0; }
+.ap-editorial-spread .ap-artwork { border-radius: 0; }
+.ap-editorial-spread h2 { font-family: var(--ui-display); font-weight: 500; font-size: clamp(1.75rem,5.5cqw,3.8rem); }
+[data-app-player="editorial"] .ap-header > button, [data-app-player="editorial"] .ap-transport > *, [data-app-player="editorial"] .ap-tools > button { border-radius: 0; }
+[data-app-player="editorial"] .ap-transport > .ex-primary { padding-inline: 22px; }
+[data-app-player="editorial"] .ap-transport > .ex-primary > span { display: inline; font-size: .8rem; }
+[data-app-player="editorial"] .ap-queue { border-top: 2px solid var(--ink); }
+.ap-library-listening .ap-copy { text-align: center; }
+.ap-library-listening .ap-source { display: flex; justify-content: center; }
+[data-app-player="library"] .ap-artwork { border-radius: 26px; }
+[data-app-player="library"] .ap-transport > .ex-primary { background: var(--accent); color: var(--accent-ink); }
+.ap-console-display { display: flex; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--line); background: var(--surface); }
+.ap-console-display .ap-artwork { width: 70px; flex-shrink: 0; border-radius: 0; }
+.ap-console-display .ap-copy { margin: 0; }
+.ap-console-display h2 { font-size: 1.15rem; }
+[data-app-player="console"] .ap-header > button, [data-app-player="console"] .ap-transport > *, [data-app-player="console"] .ap-tools > button { border-radius: 0; }
+[data-app-player="console"] .ap-transport > button { border: 1px solid var(--line); }
+[data-app-player="console"] .ap-transport > .ex-primary { flex: 1; background: var(--accent); color: var(--accent-ink); }
+[data-app-player="console"] .ap-transport > .ex-primary > span { display: inline; font-size: .75rem; }
+[data-app-player="console"] .ap-queue { padding: 18px; border: 1px solid var(--line); background: var(--surface); }
+
+@container app-player (min-width: 700px) {
+  .ap-layout { padding: 24px 32px 32px; }
+  .ap-identity { padding-block: 22px 30px; }
+  .ap-artwork { width: 100%; max-width: 380px; }
+  .ap-copy { margin: 0; }
+  .ap-panorama-stage { grid-template-columns: minmax(0,1fr) minmax(0,1.1fr); align-items: center; gap: 40px !important; }
+  [data-app-player="panorama"] .ap-tools { justify-content: flex-start; }
+  [data-app-player="panorama"] .ap-transport { justify-content: flex-start; }
+  .ap-focus-band { padding: 26px; gap: 26px; }
+  .ap-focus-band .ap-artwork { width: 140px; }
+  .ap-focus-band h2 { font-size: 1.8rem; }
+  .ap-focus-content .ap-controls { max-width: 520px; margin: auto; }
+  .ap-album-spread { grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); align-items: center; gap: 32px; padding: 30px; }
+  .ap-album-sleeve .ap-artwork { max-width: 280px; }
+  .ap-album-strip { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 40px; align-items: center; padding: 16px 0; }
+  .ap-nocturne-stage { grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); gap: 38px; padding: 10px 20px; }
+  .ap-nocturne-stage .ap-copy { text-align: left; }
+  .ap-nocturne-stage .ap-source { justify-content: flex-start; }
+  .ap-nocturne-stage .ap-artwork { max-width: 320px; }
+  .ap-nocturne-stage h2 { font-size: clamp(2rem,4.3cqw,3.5rem); }
+  .ap-nocturne-dock { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 12px 28px; align-items: center; }
+  .ap-nocturne-dock .ap-timeline { margin: 0; }
+  .ap-nocturne-dock .ap-tools { grid-column: 1/-1; padding-top: 0; }
+  .ap-editorial-spread { grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr); align-items: center; gap: 40px; }
+  .ap-editorial-bottom { display: flex; justify-content: space-between; gap: 24px; }
+  .ap-library-workspace { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,.85fr); gap: 32px; }
+  .ap-library-listening .ap-artwork { max-width: 270px; }
+  .ap-library-listening .ap-copy { margin-top: 22px; }
+  .ap-library-workspace > .ap-queue { margin: 0; border-top: 0; padding: 26px; background: var(--surface); border-radius: 22px; }
+  .ap-console-workspace { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); gap: 20px; align-items: start; }
+  .ap-console-display { min-height: 210px; padding: 24px; }
+  .ap-console-display .ap-artwork { width: 120px; }
+  .ap-console-display h2 { font-size: 1.65rem; }
+  .ap-console-workspace > .ap-queue { grid-column: 2; grid-row: 1/3; margin: 0; align-self: stretch; }
+  .ap-console-controls { grid-column: 1; }
+  [data-app-player="panorama"] > .ap-layout > .ap-queue ol, [data-app-player="atelier"] > .ap-layout > .ap-queue ol, [data-app-player="nocturne"] > .ap-layout > .ap-queue ol, [data-app-player="editorial"] > .ap-layout > .ap-queue ol { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; }
+  [data-app-player="panorama"] > .ap-layout > .ap-queue li, [data-app-player="atelier"] > .ap-layout > .ap-queue li, [data-app-player="nocturne"] > .ap-layout > .ap-queue li, [data-app-player="editorial"] > .ap-layout > .ap-queue li { border: 0; min-width: 0; }
+}
+@container app-player (max-width: 360px) {
+  .ap-layout { padding-inline: 14px; }
+  .ap-focus-band { padding: 15px; gap: 12px; }
+  .ap-focus-band .ap-artwork { width: 60px; }
+  .ap-focus-band h2 { font-size: 1.05rem; }
+  .ap-source > button { flex-wrap: wrap; max-width: 100%; }
+  .ap-source > button > span { max-width: 100%; }
+  .ap-console-display { flex-direction: column; align-items: flex-start; }
+  .ap-album-spread { padding: 18px; }
+  .ap-tools { gap: 6px; }
+}
+
+/* The same identity on the compact players; old skin classes are never emitted. */
+.app-player-mini, .app-player-dock { background: var(--surface) !important; color: var(--ink); font-family: var(--ui-font); box-shadow: none; }
+.app-player-mini .font-display, .app-player-dock .font-display { font-family: var(--ui-display); }
+.app-player-mini .cover, .app-player-dock .cover { animation: none !important; }
+.app-player-mini .app-player-toggle, .app-player-dock .app-player-toggle { background: var(--ink); color: var(--bg); box-shadow: none; }
+.app-player-mini[data-app-player="console"] .app-player-toggle, .app-player-dock[data-app-player="console"] .app-player-toggle,
+.app-player-mini[data-app-player="library"] .app-player-toggle, .app-player-dock[data-app-player="library"] .app-player-toggle { background: var(--accent); color: var(--accent-ink); }
+.app-player-mini[data-app-player="editorial"] .cover, .app-player-dock[data-app-player="editorial"] .cover,
+.app-player-mini[data-app-player="console"] .cover, .app-player-dock[data-app-player="console"] .cover { border-radius: 0 !important; }
+.app-player-mini[data-app-player="editorial"] button, .app-player-dock[data-app-player="editorial"] button,
+.app-player-mini[data-app-player="console"] button, .app-player-dock[data-app-player="console"] button { border-radius: 0; }
+.app-player-dock { min-height: 96px; height: auto; padding-block: 8px; }
+.app-player-dock[data-app-player="focus"] { min-height: 76px; gap: 18px; }
+.app-player-dock[data-app-player="focus"] > div:nth-child(2) { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 14px; }
+.app-player-dock[data-app-player="focus"] .cover { width: 44px !important; height: 44px !important; }
+.app-player-dock[data-app-player="nocturne"] { border-top-color: var(--line); }
+.app-player-dock[data-app-player="atelier"] { padding-inline: 28px; }
+.app-player-mini[data-app-player="panorama"] .cover, .app-player-dock[data-app-player="panorama"] .cover { border-radius: 14px !important; }
+.app-player-mini[data-app-player="nocturne"] .app-player-toggle { border: 1px solid var(--line); }
+.app-player-mini[data-app-player="focus"] > div:last-child { padding-block: 10px; }
+
+/* Settings preview is the real layout, scaled into a bounded, inert frame. */
+.app-player-preview { height: 420px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); }
+.app-player-preview-stage { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.app-player-preview .app-player-experience { min-height: 0; }
+.ap-demo-art { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(135deg,color-mix(in srgb,var(--accent) 25%,var(--surface)),var(--surface-2)); color: var(--accent); }
+.ap-demo-timeline { height: 3px; background: var(--line); margin: 16px 0 8px; }
+.ap-demo-timeline > i { display: block; height: 100%; width: 35%; background: var(--accent); }
+.ap-demo-times { display: flex; justify-content: space-between; color: var(--muted); font-size: .65rem; }
+.ap-linked-settings { padding: 22px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.ap-linked-settings h3 { font: 600 1.5rem/1.2 var(--ui-display); letter-spacing: -.035em; }
+.ap-linked-settings p { font-size: .8rem; color: var(--muted); line-height: 1.7; margin-top: 12px; }
+.ap-linked-settings-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.ap-linked-settings-tools button { min-height: 44px; padding: 10px 16px; border: 1px solid var(--line); border-radius: 22px; font-size: .75rem; }
+.ap-linked-settings-tools button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+@media(prefers-reduced-motion:reduce) { .app-player-experience *, .app-player-mini *, .app-player-dock * { scroll-behavior: auto !important; } }
+
+@media(max-width:767px) {
+  .modal-panel[data-mobile-modal="page"]:has(.app-player-experience) { height: 100dvh; max-height: 100dvh; }
+}

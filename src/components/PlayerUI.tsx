@@ -48,6 +48,8 @@ import { shareStation } from "./Share";
 import type { Station } from "../lib/types";
 import { PlayerExperience, type PlayerExperienceSlots } from "./PlayerExperience";
 import { PlayerScene, PlayerDial, usePlayerMotionActive } from "./PlayerScene";
+import { useAppDesign } from "../lib/appDesign";
+import { AppPlayerExperience } from "./AppPlayerExperience";
 import { usePlayerAppearance } from "../lib/playerAppearance";
 
 function statusText(p: PlayerState): string {
@@ -198,6 +200,7 @@ function SwipeToDismiss({ children, onDismiss }: { children: ReactNode; onDismis
 
 export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
   const appearance = usePlayerAppearance();
+  const appDesign = useAppDesign();
   const p = usePlayer();
   const t = usePlayerTime();
   const st = p.station;
@@ -219,11 +222,11 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
 
   return (
     <SwipeToDismiss onDismiss={dismissPlayer}>
-      <div className={`player-skin player-mini player-skin-${appearance.skin} anim-sheet pointer-events-auto relative overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl`}>
+      <div data-app-player={appDesign !== "classic" ? appDesign : undefined} data-player-mode="mini" className={`${appDesign === "classic" ? `player-skin player-skin-${appearance.skin}` : "app-player-mini"} player-mini anim-sheet pointer-events-auto relative overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl`}>
         {!p.isLive && <div className="absolute left-0 top-0 h-0.5 bg-accent" style={{ width: `${pct}%` }} />}
         <div className="flex items-center gap-3 p-2 pr-3">
           <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label="Открыть плеер">
-            <Cover s={st} size={46} className="rounded-xl" spin={active} />
+            <Cover s={st} size={46} className="rounded-xl" spin={appDesign === "classic" && active} />
             <div className="min-w-0 flex-1">
               <div className="truncate font-display text-[15px] font-semibold leading-tight">{p.meta?.title || st.name}</div>
               <div className={cn("flex items-center gap-1.5 truncate text-xs", p.status === "error" ? "text-bad" : "text-muted")}>
@@ -243,7 +246,7 @@ export function MiniPlayer({ onOpen }: { onOpen: () => void }) {
           </button>
           <button
             onClick={() => player.toggle()}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink shadow-md transition active:scale-95"
+            className="app-player-toggle flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink shadow-md transition active:scale-95"
             aria-label={p.status === "playing" ? "Пауза" : "Играть"}
           >
             <PlayIcon status={p.status} />
@@ -359,6 +362,7 @@ function Seek({ className }: { className?: string }) {
 
 export function DockPlayer({ onOpen }: { onOpen: () => void }) {
   const appearance = usePlayerAppearance();
+  const appDesign = useAppDesign();
   const p = usePlayer();
   const [equalizerOpen, setEqualizerOpen] = useState(false);
   const st = p.station;
@@ -369,10 +373,10 @@ export function DockPlayer({ onOpen }: { onOpen: () => void }) {
   const ctl = "rounded-full p-2 text-muted transition hover:bg-surface-2 hover:text-ink";
 
   return (
-    <div className={`player-skin player-dock player-skin-${appearance.skin} grid h-[84px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-6 border-t border-line bg-surface px-6`}>
+    <div data-app-player={appDesign !== "classic" ? appDesign : undefined} data-player-mode="dock" className={`${appDesign === "classic" ? `player-skin player-skin-${appearance.skin}` : "app-player-dock"} player-dock grid h-[84px] shrink-0 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)] items-center gap-6 border-t border-line bg-surface px-6`}>
       <div className="flex min-w-0 items-center gap-3">
         <button onClick={onOpen} className="group flex min-w-0 items-center gap-3 text-left" aria-label="Открыть плеер на весь экран">
-          <Cover s={st} size={56} className="rounded-lg" spin={active} />
+          <Cover s={st} size={56} className="rounded-lg" spin={appDesign === "classic" && active} />
           <span className="min-w-0">
             <span className="block truncate font-display text-[15px] font-semibold leading-tight group-hover:underline">{p.meta?.title || st.name}</span>
             <span className={cn("flex items-center gap-1.5 truncate text-xs", p.status === "error" ? "text-bad" : "text-muted")}>
@@ -401,7 +405,7 @@ export function DockPlayer({ onOpen }: { onOpen: () => void }) {
           )}
           <button
             onClick={() => player.toggle()}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-accent-ink shadow-md transition hover:brightness-110 active:scale-95"
+            className="app-player-toggle flex h-11 w-11 items-center justify-center rounded-full bg-accent text-accent-ink shadow-md transition hover:brightness-110 active:scale-95"
             aria-label={p.status === "playing" ? "Пауза" : "Играть"}
             title="Играть / пауза (пробел)"
           >
@@ -549,6 +553,7 @@ export function FullPlayer({
   const st = p.station;
   const saved = useSavedStation(st);
   const appearance = usePlayerAppearance();
+  const appDesign = useAppDesign();
   const motionActive = usePlayerMotionActive(p.status === "playing", open);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -591,7 +596,7 @@ export function FullPlayer({
       </Modal>
   );
 
-  if (appearance.skin !== "classic") {
+  if (appDesign !== "classic" || appearance.skin !== "classic") {
     const slots: PlayerExperienceSlots = {
       header: <><button onClick={onClose} aria-label="Свернуть плеер"><ChevronDown size={22} /></button><span>POCKET RADIO <i>/ {mediaLabel(st, p.isLive)}</i></span>{saved ? <button onClick={() => onEdit(saved)} aria-label="Редактировать"><Pencil size={18} /></button> : <button onClick={() => setMoreOpen(true)} aria-label="Действия с треком"><MoreHorizontal size={20} /></button>}</>,
       artwork: <Cover s={st} size="fill" className="ex-cover" eager fit={p.isLive ? "contain" : "cover"} />,
@@ -619,7 +624,7 @@ export function FullPlayer({
       </>,
     };
     return <Modal open={open} onClose={onClose} size="full" mobile="page">
-      <PlayerExperience appearance={appearance} slots={slots} active={motionActive} hue={hue} />
+      {appDesign !== "classic" ? <AppPlayerExperience design={appDesign} slots={slots} /> : <PlayerExperience appearance={appearance} slots={slots} active={motionActive} hue={hue} />}
       {moreDialog}
       <EqualizerPanel open={equalizerOpen} onClose={() => setEqualizerOpen(false)} />
     </Modal>;

@@ -184,7 +184,7 @@ for (const width of [320, 1440]) {
     for (const design of designs) {
       await apply(page, design);
       await expect(page.getByRole("button", { name: "Свернуть плеер", exact: true })).toBeVisible();
-      await expect(page.locator(".player-experience:not(.ex-preview)")).toBeVisible();
+      await expect(page.locator(".app-player-experience:not(.ap-preview)")).toBeVisible();
       await expect(page.getByRole("button", { name: "Эквалайзер", exact: true }).last()).toBeVisible();
     }
     await page.getByRole("button", { name: "Свернуть плеер", exact: true }).click();
