@@ -1,0 +1,251 @@
+/* Structural players. Container queries also render the real layouts in thumbnails. */
+.player-experience { container: player-experience / inline-size; min-height: 100%; overflow: clip; --ex-font: system-ui, sans-serif; font-family: var(--ex-font); }
+.player-experience .ex-layout { padding: 16px; position: relative; }
+.player-experience *, .player-experience *::before, .player-experience *::after { box-sizing: border-box; }
+.player-experience button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.ex-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.ex-header > button { width: 44px; height: 44px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; }
+.ex-header > span { min-width: 0; font: 10px ui-monospace, monospace; letter-spacing: .12em; text-align: center; }
+.ex-header i { display: block; margin-top: 3px; font-style: normal; font-size: 9px; color: var(--muted); }
+.ex-feedback:empty { display: none; }
+.ex-feedback:not(:empty) { margin-bottom: 14px; }
+.ex-kicker { font: 9px/1.6 ui-monospace, monospace; letter-spacing: .16em; color: var(--muted); }
+.ex-copy { min-width: 0; }
+.ex-copy h2 { font-size: clamp(28px, 5cqw, 48px); font-weight: 700; line-height: 1.08; letter-spacing: -.045em; margin: 12px 0 10px; overflow-wrap: anywhere; }
+.ex-subtitle { color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.ex-status { font: 9px/1.5 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .16em; color: var(--accent); }
+.ex-controls { min-width: 0; }
+.ex-timeline { margin: 22px 0 16px; }
+.ex-transport { display: flex; gap: 10px; align-items: stretch; }
+.ex-transport > button, .ex-transport > .ex-demo-button { min-height: 56px; min-width: 44px; flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--line); border-radius: 10px; font-size: 11px; font-weight: 600; }
+.ex-transport > :not(.ex-primary) > span { display: none; }
+.ex-transport > .ex-primary { flex: 1.8; background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.ex-transport > button:active { transform: translateY(2px); }
+.ex-tools { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 4px; padding: 18px 0; }
+.ex-tools > button, .ex-tools > .ex-demo-tool { min-height: 44px; min-width: 44px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; padding: 5px; font: 9px ui-monospace, monospace; color: var(--muted); border-radius: 8px; }
+.ex-tools > button[aria-pressed="true"] { color: var(--accent); }
+.ex-tools > button:hover { background: var(--surface-2); color: var(--ink); }
+.ex-tools > div { flex-shrink: 0; }
+.ex-live { display: flex; align-items: center; gap: 8px; min-height: 26px; font: 10px ui-monospace, monospace; letter-spacing: .1em; }
+.ex-live > span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.ex-rates { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.ex-rates button { padding: 5px 9px; min-height: 44px; border: 1px solid var(--line); border-radius: 5px; font: 11px ui-monospace, monospace; }
+.ex-rates button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.ex-queue { min-width: 0; border-top: 1px solid var(--line); padding: 18px 0 4px; }
+.ex-queue-heading { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.ex-queue h3 { font-size: 15px; font-weight: 650; letter-spacing: -.03em; }
+.ex-queue-heading > span { font: 9px ui-monospace, monospace; color: var(--muted); }
+.ex-queue ol { list-style: none; margin: 0; padding: 0; }
+.ex-queue li + li { border-top: 1px solid var(--line); }
+.ex-queue li button, .ex-queue .ex-demo-track { display: flex; width: 100%; align-items: center; gap: 10px; text-align: left; padding: 12px 0; min-height: 54px; }
+.ex-queue li button:hover { background: var(--surface-2); }
+.ex-queue-index { color: var(--muted); font: 10px ui-monospace, monospace; }
+.ex-queue-copy { flex: 1; min-width: 0; }
+.ex-queue-copy strong, .ex-queue-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-queue-copy strong { font-size: 12px; font-weight: 550; }
+.ex-queue-copy small { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.ex-queue li svg { flex-shrink: 0; }
+.ex-empty-queue { font-size: 12px; color: var(--muted); line-height: 1.7; padding: 10px 0; }
+.player-experience .ex-cover { border-radius: 0 !important; }
+.player-experience .ex-cover img { padding: 0; }
+
+/* 01 — a turntable and a sleeve, not a circular cover in the standard player. */
+.player-skin-vinyl, .experience-vinyl { --bg: #28221c; --surface: #332a22; --surface-2: #43372a; --line: #66513c; --ink: #f7ead3; --muted: #c8b89f; --accent: #e8b774; --accent-ink: #2b1d0d; }
+.experience-vinyl .ex-layout { background: repeating-linear-gradient(92deg, #ffffff02 0 1px, transparent 1px 9px); }
+.ex-turntable { position: relative; padding: 28px 24px 18px; border-radius: 12px; background: linear-gradient(135deg,#c1b29a,#8e806b); border: 1px solid #d1c4ad; box-shadow: 0 8px 0 #181411, 0 22px 40px #0004; color: #29241c; }
+.ex-deck-mark { display: block; font: 8px ui-monospace, monospace; letter-spacing: .18em; margin-bottom: 20px; }
+.ex-platter { width: 91%; aspect-ratio: 1; border-radius: 50%; border: 5px solid #49453b; box-shadow: 0 0 0 3px #b4aa99, 0 6px 14px #0007; }
+.ex-record { position: relative; width: 100%; height: 100%; border-radius: 50%; background: repeating-radial-gradient(circle, #111210 0 2px,#292a25 3px,#111210 4px 6px); animation: ex-rotate 22s linear infinite paused; }
+.ex-record::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: conic-gradient(transparent,#ffffff12,transparent 24%,#ffffff03,transparent 50%,#ffffff18,transparent 80%); }
+.ex-record-label { position: absolute; inset: 30%; overflow: hidden; border-radius: 50%; border: 2px solid #ffffff27; }
+.ex-record .ex-cover { border-radius: 50% !important; }
+.ex-spindle { position: absolute; top: calc(50% - 5px); left: calc(50% - 5px); width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(120deg,#eee9dc,#6c675e); box-shadow: 1px 2px 3px #0008; }
+.ex-tonearm { position: absolute; right: 5%; top: 18%; height: 62%; width: 20px; transform-origin: 50% 10px; transform: rotate(-12deg); transition: transform .7s ease; }
+.is-playing .ex-tonearm { transform: rotate(17deg); }
+.ex-tonearm::before { content: ""; position: absolute; top: 0; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle,#c8c6bd 0 24%,#474b44 26% 55%,#aaa99e 56%); box-shadow: 0 4px 5px #0005; }
+.ex-tonearm i { display: block; position: absolute; top: 18px; left: 11px; width: 6px; height: 77%; background: linear-gradient(90deg,#363b36,#f7f4e4 60%,#6f736b); box-shadow: 5px 5px 4px #0004; }
+.ex-tonearm span { position: absolute; bottom: 6%; left: 5px; width: 19px; height: 32px; border-radius: 3px; background: #363c34; transform: rotate(-12deg); }
+.ex-deck-bottom { display: flex; justify-content: space-between; margin-top: 22px; font: 8px ui-monospace, monospace; letter-spacing: .1em; }
+.ex-deck-bottom i { display: inline-block; width: 5px; height: 5px; background: #7d3a18; border-radius: 50%; margin-right: 6px; }
+.is-playing .ex-deck-bottom i { background: #ee6b24; box-shadow: 0 0 6px #f87b31; }
+.ex-record-sleeve { padding: 26px 4px 0; }
+.ex-record-sleeve > .ex-kicker { display: block; margin-bottom: 14px; }
+.experience-vinyl .ex-copy h2 { font-family: Georgia, serif; font-weight: 500; }
+.experience-vinyl .ex-transport > button { border-radius: 4px; box-shadow: 0 4px 0 #16130f; }
+
+/* 02 — a physical cassette shell and a separate bank of mechanical keys. */
+.player-skin-studio, .experience-studio { --bg: #cccec3; --surface: #dbddd2; --surface-2: #bec1b6; --ink: #29322c; --muted: #4b5547; --line: #9da495; --accent: #96321f; --accent-ink: #fff5dc; color-scheme: light; }
+.ex-deck-heading { display: flex; justify-content: space-between; align-items: center; margin: 5px 0 24px; }
+.ex-deck-heading > span:first-child { font-size: 13px; letter-spacing: .24em; line-height: 1.05; }
+.ex-deck-heading b { font-size: 30px; letter-spacing: -.07em; font-weight: 850; }
+.ex-deck-heading .ex-kicker { text-align: right; }
+.ex-tape-bay { min-width: 0; }
+.ex-cassette { position: relative; border-radius: 12px; border: 8px solid #313b33; padding: 17px 12px 0; color: #222d26; background: #58634e; box-shadow: 0 3px 0 #1b241d, inset 0 0 0 1px #8d9787, 0 13px 24px #2c362638; }
+.ex-tape-label { display: grid; grid-template-columns: 20px minmax(0,1fr) 34px; gap: 9px; padding: 9px 8px 12px; background: #e9dfc0; border-radius: 5px 5px 0 0; border-bottom: 7px solid #ad4329; align-items: center; }
+.ex-tape-label h2 { margin: 0; font: italic 600 16px/1.15 Georgia, serif; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ex-tape-side { font: 24px Georgia, serif; border-right: 1px solid #9c9b7c; }
+.ex-tape-art { aspect-ratio: 1; overflow: hidden; }
+.ex-tape-window { display: flex; justify-content: space-between; align-items: center; padding: 13px 15px; margin: 12px 9px; background: #222c24; border-radius: 60px; border: 3px solid #18231b; box-shadow: inset 0 4px 8px #0006; position: relative; }
+.ex-reel { position: relative; z-index: 1; display: grid; place-items: center; width: 31%; aspect-ratio: 1; border-radius: 50%; background: repeating-conic-gradient(#d7d9bd 0 12deg,#7a826e 12deg 28deg,#c8ceaf 28deg 60deg); border: 4px solid #b2b8a0; box-shadow: 0 0 0 7px #574932; animation: ex-rotate 7s linear infinite paused; }
+.ex-reel i { width: 33%; aspect-ratio: 1; background: #232b22; border-radius: 50%; box-shadow: 0 0 0 2px #e5e6cb; }
+.ex-tape-bridge { position: absolute; left: 26%; right: 26%; top: 25%; bottom: 25%; border-block: 2px solid #a18a60; }
+.ex-tape-caption { display: flex; justify-content: space-between; gap: 8px; padding: 0 8px 8px; font: 7px ui-monospace, monospace; letter-spacing: .1em; color: #e1e3c9; }
+.ex-tape-base { display: flex; align-items: center; justify-content: space-around; width: 74%; height: 28px; margin: 0 auto; padding-inline: 12px; background: #404c3e; clip-path: polygon(8% 0,92% 0,100% 100%,0 100%); }
+.ex-tape-base i { width: 7px; height: 7px; background: #17231a; border-radius: 50%; box-shadow: 0 0 0 2px #64725c; }
+.ex-screw { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#a3ad94 43%,#303c2e 44% 57%,#a3ad94 58%); }
+.screw-tl { top: 4px; left: 4px; }.screw-tr { top: 4px; right: 4px; }.screw-bl { bottom: 4px; left: 4px; }.screw-br { bottom: 4px; right: 4px; }
+.ex-tape-info { padding: 18px 2px; }
+.ex-tape-info .ex-subtitle { margin-top: 6px; }
+.ex-keyboard { padding-top: 8px; }
+.experience-studio .ex-controls { display: flex; flex-direction: column-reverse; }
+.experience-studio .ex-transport { gap: 4px; border: 5px solid #727c6c; border-radius: 4px; background: #46513f; margin-top: 12px; }
+.experience-studio .ex-transport > button, .experience-studio .ex-transport > .ex-demo-button { flex: 1; flex-direction: column; gap: 7px; border-radius: 2px; background: linear-gradient(#e9e9dc,#bfc6b5); border: 1px solid #bec5b4; color: #2d382d; box-shadow: 0 4px 0 #828e77; min-height: 70px; text-transform: uppercase; font: 9px ui-monospace, monospace; }
+.experience-studio .ex-transport > .ex-primary { background: linear-gradient(#c75a3b,#9e3a23); color: #fff3d3; border-color: #ac462e; box-shadow: 0 4px 0 #712e1d; }
+.experience-studio .ex-transport > :not(.ex-primary) > span { display: block; }
+.experience-studio .ex-tools { border-top: 1px solid var(--line); }
+
+/* 03 — a receiver dashboard: display and queue side by side, command bar below. */
+.player-skin-neon, .experience-neon { --bg: #0e1516; --surface: #152221; --surface-2: #21332e; --ink: #d7efbb; --muted: #a2b7a1; --line: #3c5146; --accent: #e4ff92; --accent-ink: #243017; --ex-font: ui-monospace, "SF Mono", monospace; }
+.experience-neon .ex-layout { background: linear-gradient(90deg,#c5e3bd04 1px,transparent 1px) 0 0 / 30px 30px, linear-gradient(#c5e3bd04 1px,transparent 1px) 0 0 / 30px 30px; }
+.ex-console-banner { display: flex; align-items: center; justify-content: space-between; border-block: 1px solid var(--line); padding: 14px 0; margin-bottom: 16px; }
+.ex-console-chip { font: 8px ui-monospace,monospace; padding: 4px 8px; border: 1px solid var(--accent); color: var(--accent); }
+.ex-terminal { position: relative; min-width: 0; padding: 18px; background: #192822; border: 1px solid #647a53; border-radius: 3px; box-shadow: inset 0 0 35px #0003; }
+.ex-terminal-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; font-size: 9px; letter-spacing: .1em; }
+.ex-terminal-art { width: 42px; height: 42px; border: 1px solid var(--line); }
+.experience-neon .ex-copy h2 { font: 650 clamp(24px,4cqw,38px)/1.12 ui-monospace, monospace; letter-spacing: -.06em; text-transform: uppercase; }
+.ex-signal { height: 58px; display: flex; gap: 4px; align-items: center; margin: 26px 0 18px; opacity: .65; }
+.ex-signal i { flex: 1; height: var(--bar); min-height: 2px; background: var(--accent); transform-origin: center; animation: ex-signal 2.4s ease-in-out infinite paused; animation-delay: var(--delay); }
+.experience-neon .ex-queue { margin-top: 16px; border: 1px solid var(--line); padding: 16px; background: #111c19; }
+.experience-neon .ex-queue .cover { display: none; }
+.ex-console-command { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+.ex-console-command > .ex-kicker { display: none; }
+.ex-console-command .ex-transport { flex: 1; }
+.experience-neon .ex-transport > button, .experience-neon .ex-transport > .ex-demo-button { border-radius: 0; }
+.experience-neon .ex-tools { border-bottom: 1px solid var(--line); }
+
+/* 04 — editorial typography, asymmetric artwork and a printed track list. */
+.player-skin-paper, .experience-paper { --bg: #f0e9d8; --surface: #f8f2e7; --surface-2: #e1dbc8; --ink: #28372d; --muted: #60694f; --line: #b3b59b; --accent: #314d38; --accent-ink: #fff6df; }
+.ex-editorial-masthead { display: flex; align-items: flex-end; justify-content: space-between; border-block: 2px solid var(--ink); padding: 12px 0; margin-bottom: 24px; }
+.ex-editorial-masthead > span:first-child { font-size: 9px; letter-spacing: .3em; }
+.ex-editorial-masthead b { font: 700 34px/.9 Georgia,serif; letter-spacing: -.06em; }
+.ex-editorial-masthead > span:last-child { font: 8px/1.6 ui-monospace,monospace; text-align: right; letter-spacing: .1em; }
+.experience-paper .ex-copy h2 { font: 500 clamp(38px,7cqw,76px)/.98 Georgia, "Times New Roman", serif; letter-spacing: -.065em; margin: 18px 0; }
+.experience-paper .ex-copy .ex-status { display: block; margin-top: 16px; }
+.ex-editorial-art { margin: 24px 0; position: relative; }
+.ex-editorial-art > div { aspect-ratio: 4/3; background: var(--surface); padding: 10px; border: 1px solid var(--line); box-shadow: 6px 6px 0 #28372d18; }
+.ex-editorial-art figcaption { margin-top: 12px; font: 8px ui-monospace,monospace; letter-spacing: .13em; }
+.experience-paper .ex-transport { justify-content: flex-start; }
+.experience-paper .ex-transport > button, .experience-paper .ex-transport > .ex-demo-button { flex: none; width: 44px; height: 44px; min-height: 44px; border: 0; border-radius: 50%; }
+.experience-paper .ex-transport > .ex-primary { width: auto; padding: 0 22px; min-width: 120px; border-radius: 0; }
+.experience-paper .ex-tools { border-block: 1px solid var(--line); }
+.experience-paper .ex-queue { border: 0; }
+.experience-paper .ex-queue h3 { font: 500 28px Georgia,serif; }
+.experience-paper .ex-queue-index { font: italic 22px Georgia,serif; }
+.experience-paper .ex-queue .cover { display: none; }
+.experience-paper .ex-queue strong { font-family: Georgia,serif; font-size: 15px; }
+
+/* 05 — immersive stage with a foreground title, floating transport and a filmstrip queue. */
+.player-skin-aurora, .experience-aurora { --bg: #10151d; --surface: #1b2633; --surface-2: #283748; --line: #415265; --ink: #f4f7fc; --muted: #b4c4d8; --accent: #c8e8ff; --accent-ink: #152b3b; }
+.experience-aurora .ex-layout { padding: 0; }
+.experience-aurora .ex-header { padding: 14px 18px; margin: 0; }
+.experience-aurora .ex-feedback { padding-inline: 18px; }
+.ex-cinema { position: relative; min-height: 390px; overflow: hidden; background: #172233; }
+.ex-cinema-art { position: absolute; inset: 0; animation: ex-pan 20s ease-in-out infinite alternate paused; }
+.ex-cinema-art .ex-cover { height: 100%; }
+
+.ex-cinema-shade { position: absolute; inset: 0; background: linear-gradient(0deg,#10151df5, #10151d30 80%), linear-gradient(90deg,#10151d70,transparent); }
+.ex-cinema-caption { position: absolute; top: 22px; left: 22px; font: 9px ui-monospace,monospace; letter-spacing: .18em; color: #fff; }
+.ex-cinema-title { position: relative; padding: 170px 22px 32px; }
+.experience-aurora .ex-copy h2 { font-size: clamp(38px,7cqw,76px); max-width: 700px; line-height: 1.02; font-weight: 750; text-wrap: balance; }
+.experience-aurora .ex-subtitle { max-width: 540px; color: #d2dce9; }
+.ex-cinema-dock { position: relative; padding: 18px 22px 0; border-top: 1px solid #d7e9ff25; background: #1b2633; }
+.experience-aurora .ex-transport { justify-content: center; }
+.experience-aurora .ex-transport > button, .experience-aurora .ex-transport > .ex-demo-button { flex: none; width: 48px; height: 48px; border: 0; }
+.experience-aurora .ex-transport > .ex-primary { width: 148px; height: 56px; border-radius: 40px; }
+.experience-aurora .ex-queue { padding: 22px; border-top: 0; }
+.experience-aurora .ex-queue ol { display: flex; overflow-x: auto; gap: 12px; scroll-snap-type: x proximity; }
+.experience-aurora .ex-queue li { min-width: min(80%,260px); flex: 1; border: 1px solid var(--line); padding: 4px 12px; border-radius: 10px; scroll-snap-align: start; }
+.experience-aurora .ex-queue-index { display: none; }
+
+@container player-experience (min-width: 680px) {
+  .player-experience .ex-layout { padding: 24px 32px; }
+  .ex-header { margin-bottom: 28px; }
+  .ex-header i { display: inline; margin-left: 12px; }
+  .ex-record-room { display: grid; grid-template-columns: 1.1fr 1fr; gap: 42px; align-items: center; }
+  .ex-turntable { padding: 32px 30px 24px; }
+  .ex-record-sleeve { padding: 0; }
+  .ex-record-room + .ex-queue { margin-top: 32px; }
+  .ex-record-room + .ex-queue ol { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+  .ex-record-room + .ex-queue li + li { border-top: 0; }
+  .ex-tape-room { display: grid; grid-template-columns: 1.3fr 1fr; gap: 36px; align-items: start; }
+  .ex-cassette { padding: 24px 22px 0; border-width: 10px; }
+  .ex-tape-label { grid-template-columns: 28px minmax(0,1fr) 45px; }
+  .ex-tape-label h2 { font-size: 23px; }
+  .ex-tape-window { padding: 20px 24px; margin-block: 20px; }
+  .ex-tape-base { height: 38px; }
+  .ex-keyboard { padding: 20px; border: 1px solid var(--line); background: #b8beae; }
+  .ex-console-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+  .ex-terminal { padding: 25px; }
+  .ex-terminal-art { width: 60px; height: 60px; }
+  .ex-console-grid .ex-queue { margin: 0; }
+  .ex-console-command > .ex-kicker { display: block; flex: 1; }
+  .ex-console-command .ex-transport { flex: 3; }
+  .ex-editorial-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 38px; align-items: start; }
+  .ex-editorial-art { margin-top: 25px; transform: rotate(2deg); }
+  .ex-editorial-art > div { aspect-ratio: 4/5; }
+  .ex-editorial-bottom { display: grid; grid-template-columns: 1fr 1.3fr; gap: 38px; margin-top: 26px; border-top: 1px solid var(--line); }
+  .ex-editorial-bottom .ex-tools { border: none; align-content: start; }
+  .ex-editorial-masthead b { font-size: 52px; }
+  .experience-aurora .ex-header { padding: 18px 28px; margin: 0; }
+  .ex-cinema { min-height: 430px; }
+  .ex-cinema-title { padding: 170px 40px 48px; }
+  .ex-cinema-caption { top: 30px; left: 40px; }
+  .ex-cinema-dock { margin: -26px 28px 0; border: 1px solid #d7e9ff25; border-radius: 16px; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 0 28px; align-items: center; padding: 20px 24px 0; box-shadow: 0 10px 40px #0004; }
+  .ex-cinema-dock .ex-timeline { margin: 0; }
+  .ex-cinema-dock .ex-tools { grid-column: 1/-1; justify-content: center; gap: 24px; padding: 12px 0; }
+  .experience-aurora .ex-queue { padding: 30px; }
+}
+
+@keyframes ex-rotate { to { transform: rotate(360deg); } }
+@keyframes ex-pan { from { transform: scale(1); } to { transform: scale(1.09) translate3d(0,-1%,0); } }
+@keyframes ex-signal { 0%,100% { transform: scaleY(.45); opacity: .55; } 50% { transform: scaleY(1); opacity: 1; } }
+.player-experience.is-playing :is(.ex-record,.ex-reel,.ex-signal i,.ex-cinema-art) { animation-play-state: running; }
+.player-experience.ex-motion-off *, [data-motion="reduced"] .player-experience * { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .player-experience * { animation: none !important; transition: none !important; } }
+
+/* Thumbnails render this very component, scaled to fit, with inert control slots. */
+.experience-thumbnail.player-template-preview { padding: 0; height: 280px; }
+.experience-thumbnail.preview-large { height: 380px; }
+.ex-preview-stage { position: absolute; transform-origin: top left; pointer-events: none; }
+.ex-preview .ex-layout { padding: 16px; }
+.ex-preview .ex-header { margin-bottom: 16px; }
+.ex-preview .ex-header > span:first-child { font-size: 12px; }
+.ex-preview .ex-header > span:last-child { font-size: 8px; }
+.ex-preview .ex-queue { padding-block: 12px 0; margin-top: 10px; }
+.ex-preview .ex-tools { padding-block: 8px; }
+.ex-preview .ex-demo-tool { min-width: 26px; min-height: 28px; }
+.ex-preview .ex-copy h2 { font-size: 34px; }
+.ex-preview .ex-queue .ex-demo-track { min-height: 36px; padding-block: 8px; }
+.ex-preview .ex-feedback { display: none; }
+.ex-demo-timeline { height: 3px; background: var(--line); position: relative; margin: 12px 0 5px; }
+.ex-demo-timeline i { display: block; height: 100%; width: 38%; background: var(--accent); }
+.ex-demo-times { display: flex; justify-content: space-between; font: 8px ui-monospace,monospace; color: var(--muted); margin-top: 8px; }
+.ex-demo-art { position: relative; width: 100%; height: 100%; overflow: hidden; background: linear-gradient(145deg,#c6dfc8,#769c98 42%,#163c4d 43%,#284b55 67%,#142c39 68%); }
+.ex-demo-art::before { content: ""; position: absolute; top: 14%; right: 20%; width: 21%; aspect-ratio: 1; background: #eee8b5; border-radius: 50%; }
+.ex-preview.experience-aurora .ex-layout { padding: 0; }
+.ex-preview.experience-aurora .ex-header { padding: 14px; margin: 0; }
+.ex-preview.experience-aurora .ex-cinema { min-height: 280px; }
+.ex-preview.experience-aurora .ex-cinema-title { padding: 130px 22px 28px; }
+.ex-preview.experience-paper .ex-editorial-art { margin-block: 14px; }
+.ex-preview.experience-paper .ex-editorial-art > div { aspect-ratio: 16/9; }
+.ex-preview.experience-paper .ex-copy h2 { font-size: 44px; }
+.ex-preview.experience-studio .ex-tape-label h2 { font-size: 20px; }
+.player-template-card:focus-visible .ex-preview :is(.ex-record,.ex-reel,.ex-signal i,.ex-cinema-art), .template-showcase:focus-within .ex-preview :is(.ex-record,.ex-reel,.ex-signal i,.ex-cinema-art) { animation-play-state: running; }
+@media (hover:hover) { .player-template-card:hover .ex-preview :is(.ex-record,.ex-reel,.ex-signal i,.ex-cinema-art), .template-showcase:hover .ex-preview :is(.ex-record,.ex-reel,.ex-signal i,.ex-cinema-art) { animation-play-state: running; } }
+
+/* The settings content column can be narrow even on a desktop with both sidebars. */
+.template-showcase { display: flex; flex-wrap: wrap; }
+.template-showcase > :first-child { flex: 1 1 300px; min-width: 0; }
+.template-showcase > :last-child { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
+.player-template-gallery { grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); }
+.player-experience.experience-aurora .ex-layout { padding: 0; }

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import "./ui-styles.css";
 import "./player-templates.css";
+import "./player-experiences.css";
 // применяют сохранённые стиль интерфейса и логотип до первой отрисовки
 import "./lib/uiStyle";
 import "./lib/appPrefs";

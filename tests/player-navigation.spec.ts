@@ -41,7 +41,9 @@ async function expectNoHorizontalPageOverflow(page: Page) {
   expect(document, `document width ${document}px should fit viewport ${viewport}px`).toBeLessThanOrEqual(viewport + 1);
 }
 
-test("full player returns directly to the playlist that started the current track", async ({ page }) => {
+for (const skin of ["classic", "vinyl", "studio", "neon", "paper", "aurora"]) {
+test(`${skin}: full player returns directly to the playlist that started the current track`, async ({ page }) => {
+  await page.addInitScript(skin => localStorage.setItem("pr.playerAppearance", JSON.stringify({ skin, motion: "none" })), skin);
   await openAsGuest(page);
   await page.getByRole("button", { name: "Плейлисты", exact: true }).click();
   await page.getByRole("button", { name: "Новый плейлист" }).click();
@@ -67,7 +69,7 @@ test("full player returns directly to the playlist that started the current trac
 
   await page.getByRole("button", { name: "Открыть плеер" }).click();
   await expect(page.getByRole("heading", { name: "Return Song" })).toBeVisible();
-  const playerPage = page.locator(".player-mobile");
+  const playerPage = page.locator(".player-mobile:visible, .player-experience:not(.ex-preview)");
   const returnButton = page.getByRole("button", { name: "Вернуться к плейлисту" });
   await expect(returnButton).toBeVisible();
   const titleBox = await page.getByRole("heading", { name: "Return Song" }).boundingBox();
@@ -87,7 +89,8 @@ test("full player returns directly to the playlist that started the current trac
   await expectNoHorizontalPageOverflow(page);
 });
 
-test("desktop full player exposes the source-playlist return action", async ({ page }) => {
+test(`${skin}: desktop full player exposes the source-playlist return action`, async ({ page }) => {
+  await page.addInitScript(skin => localStorage.setItem("pr.playerAppearance", JSON.stringify({ skin, motion: "none" })), skin);
   await openAsGuest(page, 1280);
   await page.getByRole("navigation", { name: "Разделы" }).getByRole("button", { name: /Плейлисты/ }).click();
   await page.getByRole("button", { name: "Новый плейлист" }).click();
@@ -106,3 +109,5 @@ test("desktop full player exposes the source-playlist return action", async ({ p
   await returnButton.click();
   await expect(page.getByRole("main").getByRole("heading", { name: "Desktop Mix" })).toBeVisible();
 });
+
+}

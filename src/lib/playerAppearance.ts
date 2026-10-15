@@ -37,11 +37,11 @@ export interface PlayerTemplate {
 
 export const PLAYER_TEMPLATES: PlayerTemplate[] = [
   { id: "classic", name: "Классика", desc: "Знакомый плеер в цветах приложения. Ничего лишнего.", tag: "Универсальный", prefs: { skin: "classic", layout: "focus", motion: "calm", colorWash: true } },
-  { id: "aurora", name: "Северное сияние", desc: "Полупрозрачные панели и медленный свет ночного неба.", tag: "Атмосферный", prefs: { skin: "aurora", layout: "focus", motion: "aurora", colorWash: true } },
-  { id: "vinyl", name: "Тёплый винил", desc: "Вращающаяся пластинка, янтарные акценты и мягкий свет.", tag: "Аналоговый", prefs: { skin: "vinyl", layout: "vinyl", motion: "vinyl", colorWash: false } },
-  { id: "neon", name: "Ночной эфир", desc: "Радиоволны, тонкая сетка и мятный неон на графите.", tag: "Электронный", prefs: { skin: "neon", layout: "focus", motion: "signal", colorWash: false } },
-  { id: "paper", name: "Тихое утро", desc: "Светлая бумага, выразительная типографика. Без движения.", tag: "Минимализм", prefs: { skin: "paper", layout: "focus", motion: "none", colorWash: false } },
-  { id: "studio", name: "Студия FM", desc: "Компактный модуль, приборная шкала и оранжевые детали.", tag: "Компактный", prefs: { skin: "studio", layout: "compact", motion: "calm", colorWash: false } },
+  { id: "aurora", name: "Кинотеатр", desc: "Обложка во весь экран, крупное название поверх и плавающая панель управления.", tag: "Иммерсивный", prefs: { skin: "aurora", layout: "focus", motion: "aurora", colorWash: true } },
+  { id: "vinyl", name: "Тёплый винил", desc: "Настоящая дека с тонармом, пластинкой и отдельным блоком управления.", tag: "Проигрыватель", prefs: { skin: "vinyl", layout: "vinyl", motion: "vinyl", colorWash: false } },
+  { id: "neon", name: "Цифровая консоль", desc: "Матричный дисплей, очередь в отдельном модуле и командная панель.", tag: "Ресивер", prefs: { skin: "neon", layout: "focus", motion: "signal", colorWash: false } },
+  { id: "paper", name: "Афиша", desc: "Журнальная композиция: крупная типографика, асимметричная обложка, трек-лист.", tag: "Редакционный", prefs: { skin: "paper", layout: "focus", motion: "none", colorWash: false } },
+  { id: "studio", name: "Кассетник", desc: "Кассета с двумя катушками, бумажной этикеткой и механическими клавишами.", tag: "Портативный", prefs: { skin: "studio", layout: "compact", motion: "calm", colorWash: false } },
 ];
 
 const KEY = "pr.playerAppearance";

@@ -1,76 +1,89 @@
-# Player appearance templates
+# Player templates — structural layouts
 
-## Entry points
+## Why this revision exists
 
-Settings → Appearance → Player → Player templates. The Style tab also links to
-this collection. Settings search indexes the templates and their names.
+The initial implementation reused essentially the same player with different
+colors. This revision replaces the five non-classic full players with genuinely
+different compositions. The classic player remains available unchanged.
 
-Six templates ship in `PLAYER_TEMPLATES`:
+Settings → Appearance → Style → Player templates (also under Appearance → Player).
+Template IDs and the `pr.playerAppearance` key are stable for existing installs.
 
-| ID | UI name | Layout / motion |
+| Stored ID | Name | Actual composition |
 | --- | --- | --- |
-| classic | Классика | Focus / breathing artwork; inherits the app palette |
-| aurora | Северное сияние | Focus / drifting violet and mint light |
-| vinyl | Тёплый винил | Record / rotating artwork and warm amber tones |
-| neon | Ночной эфир | Focus / radio waves, grid and mint accents |
-| paper | Тихое утро | Focus / static paper surface and serif titles |
-| studio | Студия FM | Compact / gentle motion and a decorative tuning scale |
+| classic | Классика | Existing focus, vinyl-artwork and compact arrangements |
+| vinyl | Тёплый винил | Physical turntable, grooved record, tonearm; separate sleeve/title/transport; queue underneath |
+| studio | Кассетник | Cassette label contains the title; two rotating reels; separate mechanical transport keys; tape info and queue |
+| neon | Цифровая консоль | Terminal display and queue modules; wide command bar below; small artwork within the display |
+| paper | Афиша | Oversized editorial typography; asymmetric poster artwork; printed track list; rectangular play control |
+| aurora | Кинотеатр | Edge-to-edge artwork behind the title; floating transport dock; horizontally scrollable queue cards |
 
-The full player adapts at 768px; the existing mini-player/desktop dock switch
-remains controlled by the app. Both compact players inherit template colors.
-All existing playback, seek, volume, queue, EQ and playlist-return controls stay
-connected to the original player engine. No new audio graph or analysis is used.
-The decorative FM scale is **not** a frequency selector or an audio meter.
+The phone and desktop layouts use **container queries**, not assumptions about
+window width. For example, the receiver queue is alongside the display on a
+wide player but below it on a phone. Settings cards also adapt to their actual
+content-column width, including narrow three-panel desktop configurations.
 
-## Preference semantics
+## Architecture and retained behavior
 
-- Device-local key: `pr.playerAppearance`; adds a validated `skin` field.
-- Existing layout/motion/color-wash settings are preserved on upgrade. Missing or
-  invalid skin values use `classic`, not a forced reset of the user's choices.
-- Choosing a template atomically sets skin, layout, motion and color wash.
-- Further edits are allowed; the UI labels them as custom settings. The skin is
-  still displayed, but no preset card falsely claims an exact match.
-- The default action and Device → Reset appearance both reset the new field.
-- Storage events keep open tabs consistent. Blocked storage does not break
-  in-memory selection, but cannot persist it across reloads.
-- Template application does not write app colors, app style preferences, EQ
-  settings or user media. Phone/desktop preview mode is illustrative, not a
-  forced device layout.
+`PlayerExperience.tsx` owns the structural layouts and decorative record/tape
+parts. `PlayerUI.tsx` supplies live control slots connected to the existing player:
 
-## Rendering and motion
+- play/pause, previous/next, podcast −15/+30 seconds and playback rates;
+- seek for finite audio, truthful live/status/error/offline states;
+- volume, favorite, add-to-playlist, equalizer;
+- source-playlist return and playable upcoming tracks;
+- More: save to catalog, available downloads, save identified track, share,
+  QR, sleep timer, track history, source metadata/address copy and removal.
 
-`PlayerScene.tsx` is shared by live players and schematic previews. CSS variables
-are scoped to `.player-skin`; light and dark player templates therefore remain
-legible independently of the application's light/dark theme. Record artwork
-shape wins over global cover-shape overrides, without changing other covers.
+No player engine, audio context, EQ preset, streaming or cache behavior changes.
+The decorative console bars are explicitly **not audio metering**. No fake audio
+analysis is performed. Cover fallback still works for sources without artwork.
+Mini-player/dock colors use the corresponding player palette; the major structural
+changes are intentionally in the full player.
 
-New motion uses transform/opacity, with no RAF loop, canvas, external fonts,
-images or dependencies. Artwork/waves/light pause with playback, when the full
-player closes, when its responsive variant is hidden, and when the page is
-hidden. Pausing retains the animation phase. OS reduced-motion, the app's
-reduced-motion setting and the player's no-motion option disable the effects.
-Template cards animate only on hover or keyboard focus; preview controls are
-presentational and excluded from the accessibility tree. Selection buttons
-expose their names and pressed state and support keyboard activation.
+## Honest previews
+
+The five new previews render **the same `PlayerExperience` component**, using
+inert slots instead of controls. A ResizeObserver fits the real composition to a
+thumbnail. Phone and desktop buttons change the preview's actual layout width.
+Controls in previews are not focusable and are hidden from accessibility APIs;
+outer selection buttons have accessible names, pressed state and keyboard support.
+Example track names/times/art in previews are illustrative, not user playback.
+
+## Preferences and motion
+
+- Choosing a template atomically sets its player-only preferences; app colors,
+  layout, EQ and media are untouched. Selection persists and syncs across tabs.
+- Old settings without a valid skin retain `classic` and their existing layout.
+- Focus/vinyl-artwork/compact fine tuning is specific to Classic; custom physical
+  templates own their composition instead of offering controls that do nothing.
+- Non-classic motion controls enable the template's own motion or disable it.
+  The poster is intentionally static. Classic retains its previous motion options.
+- Records/reels/light/decorative bars use CSS transform/opacity. They pause with
+  playback, on closing the player and while the page is hidden. Pausing preserves
+  animation phase. OS and app reduced-motion both override decorative movement.
+- Preview loops run only on hover or focus. No RAF loop, canvas, remote font,
+  external image asset or extra runtime dependency is needed for the templates.
 
 ## Verification
 
 ```sh
 npm run typecheck
 npm run build
-npm test -- tests/player-appearance.spec.ts
+npm test -- tests/player-appearance.spec.ts tests/player-navigation.spec.ts
 npm test
 ```
 
-The appearance suite covers normalization/migration, six template definitions,
-keyboard selection, custom edits, persistence/reset, unrelated-setting isolation,
-all six templates with long titles at 320×568, 390×844, 768×900 and 1280×800,
-compact-player colors, accessible playback controls, horizontal overflow, pause/
-resume and both reduced-motion preferences. Existing EQ and playlist navigation
-tests remain in the full regression suite. Physical iOS/Android device testing
-has not been performed.
+Coverage includes normalization/migration, keyboard selection, persistence/reset,
+setting isolation, all templates at 320×568 / 390×844 / 768×900 / 1280×800,
+long titles, controls/overflow, pause/reduced motion, genuine structural geometry,
+EQ/More access and real-layout previews inside narrow settings columns.
+All six templates have real playlist-return/queue regression tests on mobile and
+playlist-return tests on desktop. Physical Safari/iOS/Android listening and touch
+checks remain outside the automated Chromium coverage.
 
-Final local result: **92/92 tests passed** (including seven appearance tests),
-TypeScript and production build passed. A separate built-app smoke check passed
-selection/reload persistence, local-track playback, actual skin colors and
-pause/resume with no page errors. Vite's existing large-chunk warning remains.
+Final verification: **104/104 tests passed**; TypeScript and production build
+passed. A separate production smoke check selected all five new layouts through
+settings, played a local file, paused/resumed, switched phone/desktop widths,
+returned to the source playlist, and verified selection after reload, with no
+page errors. The existing Vite large-chunk warning remains outside this scope.

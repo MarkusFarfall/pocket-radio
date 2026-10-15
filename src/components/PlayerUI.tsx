@@ -46,6 +46,7 @@ import { AddToPlaylistButton } from "./PlaylistPicker";
 import { isPodcastMedia, mediaLabel } from "../lib/media";
 import { shareStation } from "./Share";
 import type { Station } from "../lib/types";
+import { PlayerExperience, type PlayerExperienceSlots } from "./PlayerExperience";
 import { PlayerScene, PlayerDial, usePlayerMotionActive } from "./PlayerScene";
 import { usePlayerAppearance } from "../lib/playerAppearance";
 
@@ -573,6 +574,57 @@ export function FullPlayer({
     await removeFromLibrary({ url });
   };
 
+  const moreDialog = (
+      <Modal open={moreOpen} onClose={() => setMoreOpen(false)} size="sm" title="Действия">
+        <div className="space-y-1 p-3">
+          {saved === null && <button onClick={async () => toast((await saveToLibrary(st)) ? "Добавлено в каталог" : "Такой адрес уже в каталоге", "ok")} className="flex w-full items-center gap-3 rounded-xl bg-accent px-3 py-3 text-sm font-semibold text-accent-ink"><Plus size={18} /> Добавить в каталог</button>}
+          {st.kind === "vod" && saved && <VodCacheButton station={st} />}
+          {p.meta?.title && !p.fallback && <button onClick={async () => toast((await saveTrack({ title: p.meta!.title!, artist: p.meta!.artist, station: st.name, stationId: st.id, logo: st.logo })) ? "Трек сохранён" : "Трек уже сохранён", "ok")} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm"><BookmarkPlus size={18} /> Сохранить трек</button>}
+          <button onClick={() => { setMoreOpen(false); void shareStation(st); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium hover:bg-surface-2"><Share2 size={18} className="text-muted" /> Поделиться ссылкой</button>
+          <button onClick={() => { setMoreOpen(false); onQr(st); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium hover:bg-surface-2"><QrCode size={18} className="text-muted" /> Показать QR-код</button>
+          <div className="p-1"><SleepTimer sleepAt={p.sleepAt} /></div>
+          <TrackHistory st={st} />
+          <details className="rounded-xl bg-surface-2 p-3 text-sm"><summary className="cursor-pointer font-semibold">Об источнике</summary><div className="mt-3 space-y-3 text-xs text-muted"><p>{mediaLabel(st, p.isLive)} · {p.dataSaver ? "Экономия трафика включена" : "Экономия трафика выключена"} · ≈ {fmtBytes(perHour)}/час</p><div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate font-mono">{st.url}</span><button onClick={() => void navigator.clipboard.writeText(st.url).then(() => toast("Адрес скопирован", "ok"), () => toast("Не удалось скопировать адрес", "info"))} className="shrink-0 rounded-lg p-2" aria-label="Копировать адрес"><Copy size={16} /></button></div></div></details>
+          {(st.note || st.tags.length > 0) && <div className="rounded-xl bg-surface-2 p-3"><div className="flex flex-wrap gap-1.5">{st.tags.map((t) => <span key={t} className="rounded-full bg-bg px-2.5 py-1 text-xs text-muted">#{t}</span>)}</div>{st.note && <p className="mt-2 text-sm leading-relaxed text-muted">{st.note}</p>}</div>}
+          {saved && <><div className="my-1 h-px bg-line" />{confirmRemove ? <div className="rounded-xl bg-bad/10 p-3"><p className="text-sm text-bad">Убрать «{saved.name}» из каталога?</p><div className="mt-3 flex gap-2"><button className={btnGhost} onClick={() => setConfirmRemove(false)}>Отмена</button><button className="rounded-xl bg-bad px-4 py-2 text-sm font-semibold text-white" onClick={() => void remove()}>Убрать</button></div></div> : <button onClick={() => setConfirmRemove(true)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-bad hover:bg-bad/10"><Trash2 size={18} /> Убрать из каталога</button>}</>}
+        </div>
+      </Modal>
+  );
+
+  if (appearance.skin !== "classic") {
+    const slots: PlayerExperienceSlots = {
+      header: <><button onClick={onClose} aria-label="Свернуть плеер"><ChevronDown size={22} /></button><span>POCKET RADIO <i>/ {mediaLabel(st, p.isLive)}</i></span>{saved ? <button onClick={() => onEdit(saved)} aria-label="Редактировать"><Pencil size={18} /></button> : <button onClick={() => setMoreOpen(true)} aria-label="Действия с треком"><MoreHorizontal size={20} /></button>}</>,
+      artwork: <Cover s={st} size="fill" className="ex-cover" eager fit={p.isLive ? "contain" : "cover"} />,
+      title: <h2>{p.meta?.title || st.name}</h2>,
+      subtitle: p.meta?.title ? [p.meta.artist, st.name].filter(Boolean).join(" · ") : [st.genre, st.city].filter(Boolean).join(" · ") || mediaLabel(st, p.isLive),
+      status: <><span className={p.status === "error" ? "text-bad" : ""}>{statusText(p)}</span>{p.fromCache && <span> / ОФЛАЙН</span>}</>,
+      source: <SourceReturnButton sourcePlaylistId={p.sourcePlaylistId} sourceContext={p.sourceContext} onBackToPlaylist={onBackToPlaylist} onClose={onClose} />,
+      transport: <>
+        <button onClick={() => podcast && !p.isLive ? player.skip(-15) : player.step(-1)} aria-label={podcast && !p.isLive ? "Назад 15 секунд" : "Предыдущий трек"}>{podcast && !p.isLive ? <RotateCcw size={22} /> : <SkipBack size={22} />}<span>{podcast && !p.isLive ? "−15 с" : "Назад"}</span></button>
+        <button className="ex-primary" onClick={() => player.toggle()} aria-label={p.status === "playing" ? "Пауза" : "Играть"}><PlayIcon status={p.status} size={28} /><span>{p.status === "playing" ? "Пауза" : active ? "Загрузка" : "Слушать"}</span></button>
+        <button onClick={() => podcast && !p.isLive ? player.skip(30) : player.step(1)} aria-label={podcast && !p.isLive ? "Вперёд 30 секунд" : "Следующий трек"}>{podcast && !p.isLive ? <RotateCw size={22} /> : <SkipForward size={22} />}<span>{podcast && !p.isLive ? "+30 с" : "Далее"}</span></button>
+      </>,
+      timeline: <>{p.isLive ? <div className="ex-live"><span /> ПРЯМОЙ ЭФИР</div> : <Seek />}{podcast && !p.isLive && <div className="ex-rates">{RATES.map(r => <button key={r} onClick={() => player.setRate(r)} aria-pressed={p.rate === r}>{r}×</button>)}</div>}</>,
+      tools: <>
+        <VolumePopover volume={p.volume} muted={p.muted} side="top" />
+        <button onClick={() => void favorite(st)} aria-label="Избранное" aria-pressed={fav}><Heart size={18} className={fav ? "fill-current" : ""} /><span>Избранное</span></button>
+        <AddToPlaylistButton station={st} className="ex-playlist-button" label="Плейлист" size={18} />
+        <button onClick={() => setEqualizerOpen(true)} aria-label="Эквалайзер" aria-pressed={p.equalizer.enabled}><SlidersHorizontal size={18} /><span>EQ</span></button>
+        <button onClick={() => setMoreOpen(true)} aria-label="Ещё"><MoreHorizontal size={20} /><span>Ещё</span></button>
+      </>,
+      queue: <><div className="ex-queue-heading"><h3>Далее</h3><span>{upcoming.length ? `${upcoming.length} в очереди` : "Ваша следующая музыка"}</span></div>{upcoming.length ? <ol>{upcoming.map((item, i) => <li key={item.id}><button onClick={() => void player.play(item, p.queue, { sourcePlaylistId: p.sourcePlaylistId, sourceContext: p.sourceContext })}><span className="ex-queue-index">{String(i + 1).padStart(2, "0")}</span><Cover s={item} size={38} /><span className="ex-queue-copy"><strong>{item.name}</strong><small>{item.genre || item.city || mediaLabel(item, item.kind !== "vod")}</small></span><Play size={15} /></button></li>)}</ol> : <p className="ex-empty-queue">В очереди пока тихо. Добавьте трек в плейлист — он появится здесь.</p>}</>,
+      feedback: <>
+        {p.fallback && <FallbackBanner />}
+        {p.status === "error" && p.error && <div className="rounded-xl bg-bad/10 p-3 text-sm text-bad">{p.error} <button onClick={() => void player.resume()} className="underline">Повторить</button></div>}
+      </>,
+    };
+    return <Modal open={open} onClose={onClose} size="full" mobile="page">
+      <PlayerExperience appearance={appearance} slots={slots} active={motionActive} hue={hue} />
+      {moreDialog}
+      <EqualizerPanel open={equalizerOpen} onClose={() => setEqualizerOpen(false)} />
+    </Modal>;
+  }
+
   return (
     <Modal open={open} onClose={onClose} size="xl" mobile="page">
       {/* Телефон: компактный плеер, главные действия в первом экране */}
@@ -687,16 +739,7 @@ export function FullPlayer({
         </div>
       </div>
 
-      <Modal open={moreOpen} onClose={() => setMoreOpen(false)} size="sm" title="Действия">
-        <div className="space-y-1 p-3">
-          <button onClick={() => { setMoreOpen(false); void shareStation(st); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium hover:bg-surface-2"><Share2 size={18} className="text-muted" /> Поделиться ссылкой</button>
-          <button onClick={() => { setMoreOpen(false); onQr(st); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium hover:bg-surface-2"><QrCode size={18} className="text-muted" /> Показать QR-код</button>
-          <div className="p-1"><SleepTimer sleepAt={p.sleepAt} /></div>
-          <TrackHistory st={st} />
-          {(st.note || st.tags.length > 0) && <div className="rounded-xl bg-surface-2 p-3"><div className="flex flex-wrap gap-1.5">{st.tags.map((t) => <span key={t} className="rounded-full bg-bg px-2.5 py-1 text-xs text-muted">#{t}</span>)}</div>{st.note && <p className="mt-2 text-sm leading-relaxed text-muted">{st.note}</p>}</div>}
-          {saved && <><div className="my-1 h-px bg-line" />{confirmRemove ? <div className="rounded-xl bg-bad/10 p-3"><p className="text-sm text-bad">Убрать «{saved.name}» из каталога?</p><div className="mt-3 flex gap-2"><button className={btnGhost} onClick={() => setConfirmRemove(false)}>Отмена</button><button className="rounded-xl bg-bad px-4 py-2 text-sm font-semibold text-white" onClick={() => void remove()}>Убрать</button></div></div> : <button onClick={() => setConfirmRemove(true)} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-bad hover:bg-bad/10"><Trash2 size={18} /> Убрать из каталога</button>}</>}
-        </div>
-      </Modal>
+      {moreDialog}
 
       {/* Планшет и компьютер: двухколоночная версия */}
       <div className={cn("player-skin player-desktop relative hidden md:block", `player-skin-${appearance.skin}`, `player-layout-${appearance.layout}`, `player-motion-${appearance.motion}`, motionActive && "is-playing")} data-color-wash={appearance.colorWash ? "on" : "off"} style={{ ["--player-hue" as string]: hue }}>

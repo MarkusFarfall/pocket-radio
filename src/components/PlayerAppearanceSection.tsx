@@ -44,7 +44,7 @@ export function PlayerAppearanceSection() {
         <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
           <div><p className="mb-1 text-[10px] font-bold uppercase tracking-[.2em] text-accent">Коллекция / 06</p>
             <h3 id="player-templates-title" className="font-display text-2xl font-bold tracking-tight">Шаблоны плеера</h3>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">Ваш плеер — ваш характер. Готовые образы для телефона и компьютера. Меняется только оформление, не звук.</p>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">Не палитры, а разные плееры: дека, кассетник, консоль, афиша и киноэкран. Каждый со своей композицией и управлением. Звук остаётся прежним.</p>
           </div>
           <button onClick={() => setPlayerAppearance(DEFAULT_PLAYER_APPEARANCE)} className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-line px-3 text-xs font-semibold hover:bg-surface-2"><RotateCcw size={13} /> По умолчанию</button>
         </div>
@@ -56,14 +56,14 @@ export function PlayerAppearanceSection() {
             <span className="text-[10px] font-bold uppercase tracking-[.18em] text-muted">Сейчас выбран</span>
             <p className="font-display text-xl font-semibold" aria-live="polite">{skin.name}{!current && <span className="mt-1 block text-xs font-normal text-muted">С вашими настройками</span>}</p>
             <p className="text-sm leading-relaxed text-muted">{skin.desc}</p>
-            <div className="inline-flex w-fit gap-1 rounded-full border border-line p-1" role="group" aria-label="Формат предпросмотра">
+            <div className="inline-flex w-fit max-w-full flex-wrap gap-1 rounded-full border border-line p-1" role="group" aria-label="Формат предпросмотра">
               <button onClick={() => setDesktop(false)} aria-pressed={!desktop} className={cn("inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold", !desktop && "bg-ink text-bg")}><Smartphone size={14} /> Телефон</button>
               <button onClick={() => setDesktop(true)} aria-pressed={desktop} className={cn("inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold", desktop && "bg-ink text-bg")}><Monitor size={14} /> Компьютер</button>
             </div>
             <p className="text-xs leading-relaxed text-muted">Применяется сразу и сохраняется на этом устройстве. Движение в карточках — при наведении или фокусе.</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 xl:grid-cols-3">
+        <div className="player-template-gallery grid gap-3">
           {PLAYER_TEMPLATES.map((template, index) => {
             const on = current?.id === template.id;
             return <button key={template.id} aria-label={`Шаблон «${template.name}»`} aria-pressed={on} onClick={() => applyPlayerTemplate(template.id)} className={cn("player-template-card min-w-0 rounded-2xl border p-2 text-left transition", on ? "border-accent ring-2 ring-accent/25" : "border-line hover:border-ink/30")}>
@@ -76,7 +76,7 @@ export function PlayerAppearanceSection() {
         </div>
       </section>
       <div className="border-t border-line pt-6"><h3 className="text-xs font-bold uppercase tracking-[.16em] text-muted">Тонкая настройка</h3><p className="mt-1 text-xs text-muted">Измените выбранный образ под себя. Другие настройки приложения останутся прежними.</p></div>
-      <div data-row="Макет плеера">
+      {p.skin === "classic" && <div data-row="Макет плеера">
         <h3 className="mb-1 font-display text-lg font-semibold">Макет плеера</h3>
         <p className="mb-3 text-sm text-muted">Выберите композицию большого плеера. Цвета шаблона также применяются к мини-плееру и компьютерному доку.</p>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -94,14 +94,17 @@ export function PlayerAppearanceSection() {
             );
           })}
         </div>
-      </div>
+      </div>}
 
-      <div data-row="Характер движения">
+      {p.skin !== "paper" ? <div data-row="Характер движения">
         <h3 className="mb-1 font-display text-lg font-semibold">Характер движения</h3>
         <p className="mb-3 text-sm text-muted">Анимации работают через transform и opacity. Системная настройка «Меньше анимаций» имеет приоритет.</p>
         <div className="grid gap-2 sm:grid-cols-2">
-          {PLAYER_MOTIONS.map((x) => {
-            const on = p.motion === x.id;
+          {(p.skin === "classic" ? PLAYER_MOTIONS : [
+            { id: skin.prefs.motion === "none" ? "calm" as const : skin.prefs.motion, name: "Движение шаблона", desc: "Пластинка, катушки или свет — в характере выбранного плеера." },
+            { id: "none" as const, name: "Без движения", desc: "Статичный интерфейс без декоративных анимаций." },
+          ]).map((x) => {
+            const on = x.id === "none" ? p.motion === "none" : p.skin === "classic" ? p.motion === x.id : p.motion !== "none";
             return (
               <button key={x.id} onClick={() => setPlayerAppearance({ motion: x.id })} aria-pressed={on} className={cn("flex items-center gap-3 rounded-xl border p-3 text-left transition", on ? "border-accent bg-accent/10" : "border-line hover:border-ink/30")}>
                 <MotionPreview id={x.id} />
@@ -115,11 +118,13 @@ export function PlayerAppearanceSection() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+      : <p className="text-sm text-muted">«Афиша» — намеренно статичный журнальный макет. Для движения выберите деку, кассетник, консоль или кинотеатр.</p>}
+
+      {p.skin === "classic" && <div className="overflow-hidden rounded-2xl border border-line bg-surface">
         <Row title="Цветной свет от обложки" desc="Фон большого плеера получает мягкий оттенок текущей станции или песни.">
           <Toggle checked={p.colorWash} onChange={(v) => setPlayerAppearance({ colorWash: v })} label="Цветной свет от обложки" />
         </Row>
-      </div>
+      </div>}
     </div>
   );
 }

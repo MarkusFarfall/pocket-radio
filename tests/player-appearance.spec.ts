@@ -81,7 +81,7 @@ for (const [width, height] of [[320, 568], [390, 844], [768, 900], [1280, 800]])
     await expect(page.getByRole("heading", { name: "Что послушаем?" })).toBeVisible();
     await playTone(page);
     await page.getByRole("button", { name: width < 1024 ? "Открыть плеер" : "Открыть плеер на весь экран", exact: true }).click();
-    const full = page.locator(width < 768 ? ".player-mobile" : ".player-desktop");
+    const full = page.locator(".player-mobile:visible, .player-desktop:visible, .player-experience:not(.ex-preview)");
     for (const { id } of PLAYER_TEMPLATES) {
       await page.evaluate(async (id) => (await import("/src/lib/playerAppearance.ts")).applyPlayerTemplate(id), id);
       await expect(full).toHaveClass(new RegExp(`player-skin-${id}`));
@@ -114,8 +114,8 @@ test("decorative motion pauses with playback and obeys both reduced-motion setti
   await page.evaluate(async () => (await import("/src/lib/playerAppearance.ts")).applyPlayerTemplate("vinyl"));
   await playTone(page);
   await page.getByRole("button", { name: "Открыть плеер", exact: true }).click();
-  const full = page.locator(".player-mobile");
-  const art = full.locator(".player-art-wrap");
+  const full = page.locator(".player-experience:not(.ex-preview)");
+  const art = full.locator(".ex-record");
   await expect(art).toHaveCSS("animation-play-state", "running");
   await full.getByRole("button", { name: "Пауза", exact: true }).click();
   await expect(art).toHaveCSS("animation-play-state", "paused");
@@ -128,4 +128,64 @@ test("decorative motion pauses with playback and obeys both reduced-motion setti
   await page.evaluate(async () => (await import("/src/lib/uiStyle.ts")).setUiPrefs({ reduceMotion: false }));
   await page.evaluate(async () => (await import("/src/lib/playerAppearance.ts")).setPlayerAppearance({ motion: "none" }));
   await expect(art).toHaveCSS("animation-name", "none");
+});
+
+test("templates change actual composition, not just palette, and all retain EQ and actions", async ({ page }) => {
+  await openApp(page, 1280, 1000);
+  await page.getByRole("button", { name: /Быстрый старт/ }).first().click();
+  await playTone(page);
+  await page.getByRole("button", { name: "Открыть плеер на весь экран", exact: true }).click();
+  const full = page.locator(".player-experience:not(.ex-preview)");
+  const structures = { vinyl: "turntable", studio: "cassette", neon: "terminal", paper: "poster", aurora: "cinema" } as const;
+  for (const [id, part] of Object.entries(structures)) {
+    await page.evaluate(async (id) => (await import("/src/lib/playerAppearance.ts")).applyPlayerTemplate(id), id);
+    await expect(full).toHaveAttribute("data-experience", id);
+    await expect(full.locator(`[data-part="${part}"]`)).toBeVisible();
+    const art = await full.locator(`[data-part="${part}"]`).boundingBox();
+    const controls = await full.locator('[data-part="controls"]').boundingBox();
+    if (id === "vinyl" || id === "studio") expect(controls!.x).toBeGreaterThan(art!.x + art!.width);
+    if (id === "neon") {
+      const queue = await full.locator('[data-part="queue"]').boundingBox();
+      expect(queue!.x).toBeGreaterThan(art!.x + art!.width);
+      expect(controls!.y).toBeGreaterThan(art!.y + art!.height);
+    }
+    if (id === "paper") {
+      const copy = await full.locator('[data-part="copy"]').boundingBox();
+      expect(art!.x).toBeGreaterThan(copy!.x + copy!.width);
+    }
+    if (id === "aurora") {
+      const root = await full.boundingBox();
+      expect(art!.width / root!.width).toBeGreaterThan(.95);
+      expect(controls!.y).toBeGreaterThan(art!.y + art!.height - 50);
+    }
+    await full.getByRole("button", { name: "Эквалайзер", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Эквалайзер", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("heading", { name: "Эквалайзер", exact: true })).toBeHidden();
+    await full.getByRole("button", { name: "Ещё", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Поделиться ссылкой", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Действия", exact: true }) }).getByRole("button", { name: /Таймер сна/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+  }
+});
+
+test("settings previews render the real layouts and fit narrow desktop columns", async ({ page }) => {
+  await openApp(page);
+  await settings(page);
+  await page.getByRole("button", { name: "Стиль", exact: true }).click();
+  await page.getByRole("button", { name: /Шаблоны плеера/ }).click();
+  for (const [id, part] of Object.entries({ vinyl: "turntable", studio: "cassette", neon: "terminal", paper: "poster", aurora: "cinema" })) {
+    await expect(page.locator(`.player-template-card .experience-${id} [data-part="${part}"]`)).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Шаблон «Кассетник»" }).click();
+  for (const width of [320, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const showcase = page.locator(".template-showcase");
+    const thumb = showcase.locator(".experience-thumbnail");
+    await expect.poll(async () => (await thumb.boundingBox())?.width ?? 0).toBeGreaterThan(140);
+    const scale = await showcase.locator(".ex-preview-stage").evaluate(el => new DOMMatrix(getComputedStyle(el).transform).a);
+    expect(scale).toBeGreaterThan(.1);
+    await noOverflow(page);
+    expect(await showcase.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+  }
 });
