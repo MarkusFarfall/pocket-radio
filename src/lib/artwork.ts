@@ -68,3 +68,17 @@ export function isGeneratedWaveformCover(image: HTMLImageElement): boolean {
     return false;
   }
 }
+
+/** One policy for storage and display: keep real data artwork and upgrade legacy HTTP logos. */
+export function artworkUrl(value?: string | null): string | undefined {
+  if (!value) return undefined;
+  const source = value.trim();
+  if (isPlaceholderArtwork(source)) return undefined;
+  if (/^data:image\/(?:jpeg|jpg|png|webp|gif|avif|svg\+xml|bmp|x-icon|vnd\.microsoft\.icon)[;,]/i.test(source)) return source;
+  try {
+    const url = new URL(source.startsWith("//") ? `https:${source}` : source);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return undefined;
+    url.protocol = "https:";
+    return url.href;
+  } catch { return undefined; }
+}

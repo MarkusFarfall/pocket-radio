@@ -1,9 +1,10 @@
-/** Чтение названия, исполнителя и альбома из тегов ID3 (v1, v2.2–v2.4). Кириллица в cp1251 читается корректно. */
+/** Чтение названия, исполнителя, альбома и встроенного JPEG/PNG из тегов ID3 (v1, v2.2–v2.4). Кириллица в cp1251 читается корректно. */
 
 export interface Tags {
   title?: string;
   artist?: string;
   album?: string;
+  picture?: Blob;
 }
 import { bestText, fixText } from "./text";
 
@@ -31,10 +32,29 @@ function decodeFrame(bytes: Uint8Array): string {
   return fixText(text.split("\0")[0]);
 }
 
+/** ID3 APIC/PIC; only embedded raster bytes, never external image links. */
+function pictureFrame(bytes: Uint8Array, legacy: boolean): { picture: Blob; front: boolean } | undefined {
+  const encoding = bytes[0];
+  let at = 1;
+  if (legacy) at += 3;
+  else { while (at < bytes.length && bytes[at]) at++; at++; }
+  const front = bytes[at++] === 3;
+  if (encoding === 1 || encoding === 2) {
+    while (at + 1 < bytes.length && (bytes[at] || bytes[at + 1])) at += 2;
+    at += 2;
+  } else { while (at < bytes.length && bytes[at]) at++; at++; }
+  const data = bytes.subarray(at);
+  const type = data[0] === 0xff && data[1] === 0xd8 ? "image/jpeg" : data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47 ? "image/png" : undefined;
+  if (!type || data.length < 16 || data.length > 4 * 1024 * 1024) return;
+  return { picture: new Blob([new Uint8Array(data).buffer], { type }), front };
+}
+
 export async function readTags(file: File): Promise<Tags> {
   const out: Tags = {};
   try {
-    const head = new Uint8Array(await file.slice(0, 262144).arrayBuffer());
+    const prefix = new Uint8Array(await file.slice(0, 10).arrayBuffer());
+    const tagLength = prefix.length === 10 && prefix[0] === 0x49 && prefix[1] === 0x44 && prefix[2] === 0x33 ? 10 + synch(prefix, 6) : 10;
+    const head = new Uint8Array(await file.slice(0, Math.min(tagLength, 4 * 1024 * 1024)).arrayBuffer());
     if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) {
       const ver = head[3];
       const flags = head[5];
@@ -48,11 +68,19 @@ export async function readTags(file: File): Promise<Tags> {
         if (!/^[A-Z0-9]{3,4}$/.test(id)) break;
         const size = ver === 2 ? (head[pos + 3] << 16) | (head[pos + 4] << 8) | head[pos + 5] : ver === 4 ? synch(head, pos + 4) : be32(head, pos + 4);
         const start = pos + hdr;
-        if (size <= 0 || start + size > head.length) break;
+        if (size <= 0 || start + size > total) break;
         const val = () => decodeFrame(head.subarray(start, start + size));
         if (id === "TIT2" || id === "TT2") out.title = val();
         else if (id === "TPE1" || id === "TP1") out.artist = val();
         else if (id === "TALB" || id === "TAL") out.album = val();
+        else if (id === "APIC" || id === "PIC") {
+          // Do not interpret compressed/encrypted payloads as image data.
+          const frameFlags = ver === 2 ? 0 : head[pos + 9];
+          if (!(flags & 0x80) && !(frameFlags & (ver === 4 ? 0x4f : 0xe0))) {
+            const art = pictureFrame(head.subarray(start, start + size), ver === 2);
+            if (art && (!out.picture || art.front)) out.picture = art.picture;
+          }
+        }
         pos = start + size;
       }
     }

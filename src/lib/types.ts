@@ -101,6 +101,8 @@ export interface PlaylistItem {
   title: string;
   /** исполнитель, название подкаста или жанр/город станции */
   subtitle?: string;
+  /** Альбом из метаданных локального файла. */
+  album?: string;
   url: string;
   kind: StreamKind;
   logo?: string;

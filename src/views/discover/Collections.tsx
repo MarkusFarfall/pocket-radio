@@ -13,6 +13,7 @@ import { player, usePlayer, type PlayerSourceContext } from "../../lib/player";
 import { fmtClock } from "../../lib/templates";
 import { toast } from "../../lib/toast";
 import { cn } from "../../utils/cn";
+import { OfflineMusicLibrary } from "../../components/OfflineMusicLibrary";
 import { Cover, Equalizer, Modal, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 
 const fmtNum = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -349,7 +350,7 @@ interface Active {
   provider?: MusicSource;
 }
 
-export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewProps["onPlay"] }) {
+function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps["onPlay"] }) {
   const [text, setText] = useState("");
   const [scope, setScope] = useState<AlbumSearchScope>("artist");
   const [provider, setProvider] = useState<MusicSource>("archive");
@@ -362,11 +363,13 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Album | null>(null);
   const ctl = useRef<AbortController | null>(null);
+  const retryPage = useRef(1);
 
   const load = useCallback(async (a: Active, pg: number) => {
     ctl.current?.abort();
     const c = new AbortController();
     ctl.current = c;
+    retryPage.current = pg;
     setLoading(true);
     setError(null);
     try {
@@ -401,6 +404,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
     if (!active || !online) return;
     setAlbums([]);
     setExternalTracks([]);
+    setMore(false);
     void load(active, 1);
     return () => ctl.current?.abort();
   }, [active, online, load]);
@@ -437,8 +441,10 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
   };
 
   const switchProvider = (nextProvider: MusicSource) => {
+    ctl.current?.abort();
+    setLoading(false);
     setProvider(nextProvider);
-    setActive(null);
+    setActive(active?.text ? { ...active, provider: nextProvider } : null);
     setAlbums([]);
     setExternalTracks([]);
     setError(null);
@@ -446,6 +452,8 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
   };
 
   const clearSearch = () => {
+    ctl.current?.abort();
+    setLoading(false);
     setText("");
     setScope("artist");
     setActive(null);
@@ -527,7 +535,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
           <SearchIcon size={16} /> Найти
         </button>
       </form>
-      <p className="text-xs leading-relaxed text-muted">
+      <p className="music-search-explanation text-xs leading-relaxed text-muted">
         {scope === "artist"
           ? "Сначала ищем по исполнителю, затем по названию и тематическим меткам. Совпадения в метках подписаны; жанр можно написать по-русски или выбрать ниже."
           : "Ищем точную фразу в исполнителях, названиях и жанровых темах. Русские названия жанров тоже понимаем."}
@@ -573,9 +581,9 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
   );
 
   return (
-    <div className="space-y-5">
+    <div className="music-discovery space-y-5">
       <div className="space-y-3 rounded-2xl border border-line bg-surface p-4">
-        <div className="flex items-start gap-3">
+        <div className="music-source-heading">
           <p className="min-w-0 flex-1 text-sm leading-relaxed">
             <b>{provider === "archive" ? "Песни и альбомы." : "Отдельные аудиотреки."}</b> {provider === "archive" ? "Ищите в коллекциях Internet Archive." : "Ищите по исполнителю, названию или жанру."} Офлайн-загрузка зависит от лицензии и доступа к файлу.
           </p>
@@ -583,7 +591,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             aria-label="Источник музыки"
             value={provider}
             onChange={(event) => switchProvider(event.target.value as MusicSource)}
-            className={cn(inputCls, "!w-32 shrink-0 !py-2 !pl-2 !pr-5 text-[11px] font-semibold sm:!w-40 sm:text-xs")}
+            className={cn(inputCls, "music-provider-select shrink-0 text-xs font-semibold")}
           >
             <option value="archive">Archive.org</option>
             <option value="openverse">Openverse</option>
@@ -591,14 +599,16 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
           </select>
         </div>
         {search}
-        <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
-          <ShieldAlert size={15} className="mt-0.5 shrink-0" />
+        <details className="music-search-rights text-xs leading-relaxed text-muted">
+          <summary>Проверяйте права перед скачиванием</summary>
+          <p className="flex items-start gap-2 mt-2"><ShieldAlert size={15} className="mt-0.5 shrink-0" />
           {provider === "archive"
             ? "Internet Archive — открытая библиотека: права на записи остаются у правообладателей. Сохраняйте только то, что вам разрешено."
             : provider === "openverse"
               ? "Openverse агрегирует музыку из Jamendo, Wikimedia Commons и Freesound. Проверяйте лицензию, атрибуцию и страницу оригинала перед использованием или скачиванием."
               : "Wikimedia Commons: условия лицензии и возможность скачивания различаются для каждого файла. Проверьте страницу оригинала."}
-        </p>
+          </p>
+        </details>
       </div>
 
       {!active ? (
@@ -675,7 +685,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
           {error && (
             <div className="flex items-center gap-3 rounded-xl bg-bad/10 p-4 text-sm text-bad">
               <span className="flex-1">Не удалось связаться с {provider === "archive" ? "Internet Archive" : provider === "openverse" ? "Openverse" : "Wikimedia Commons"}: {error}</span>
-              <button className="shrink-0 font-semibold underline" onClick={() => void load(active, 1)}>
+              <button className="shrink-0 font-semibold underline" onClick={() => void load(active, retryPage.current)}>
                 Повторить
               </button>
             </div>
@@ -748,7 +758,7 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
             )}
           </div>
 
-          {more && (provider === "archive" ? albums.length > 0 : externalTracks.length > 0) && (
+          {more && (
             <div className="text-center">
               <button className={btnGhost} disabled={loading} onClick={() => void load(active, page + 1)}>
                 {loading ? <Loader2 size={16} className="animate-spin" /> : null} Показать ещё
@@ -761,4 +771,25 @@ export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewP
       {open && <AlbumPanel album={open} onClose={() => setOpen(null)} onPlay={onPlay} />}
     </div>
   );
+}
+
+
+/** Keep the two tasks explicit: discovering downloads needs a network, the library does not. */
+export function Collections({ online, onPlay }: { online: boolean; onPlay: ViewProps["onPlay"] }) {
+  const [section, setSection] = useState<"find" | "device">(() => !online || localStorage.getItem("pr.music.section") === "device" ? "device" : "find");
+  const [visitedDevice, setVisitedDevice] = useState(section === "device");
+  const choose = (next: "find" | "device") => {
+    setSection(next);
+    if (next === "device") setVisitedDevice(true);
+    localStorage.setItem("pr.music.section", next);
+  };
+  useEffect(() => { if (!online) { setSection("device"); setVisitedDevice(true); } }, [online]);
+  return <div className="music-workspace space-y-5">
+    <div className="music-workspace-tabs" role="group" aria-label="Где искать музыку">
+      <button aria-pressed={section === "find"} onClick={() => choose("find")}><SearchIcon size={18}/><span>Найти музыку<small>Источники для скачивания</small></span></button>
+      <button aria-pressed={section === "device"} onClick={() => choose("device")}><Download size={18}/><span>На устройстве<small>Скачанное и свои файлы</small></span></button>
+    </div>
+    <div hidden={section !== "find"}><MusicDiscovery online={online} onPlay={onPlay}/></div>
+    {(visitedDevice || section === "device") && <div hidden={section !== "device"}><OfflineMusicLibrary onDiscover={() => choose("find")}/></div>}
+  </div>;
 }

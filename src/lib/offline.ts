@@ -3,6 +3,19 @@ import type { OfflineItem, Station } from "./types";
 import { fetchCddaWav, parseCddaTrackUrl } from "./cdda";
 
 const CACHE = "radio-audio-v1";
+// Cache.put and the IndexedDB index are separate transactions. Reconciliation must
+// never mistake an in-flight import/download for abandoned audio.
+const writes = new Map<string, number>();
+const writeKey = (scope: string, id: string) => `${scope}\0${id}`;
+async function writing<T>(scope: string, id: string, run: () => Promise<T>): Promise<T> {
+  const key = writeKey(scope, id);
+  writes.set(key, (writes.get(key) ?? 0) + 1);
+  try { return await run(); }
+  finally { const n = (writes.get(key) ?? 1) - 1; if (n) writes.set(key, n); else writes.delete(key); }
+}
+function assertScope(scope: string) {
+  if (scope !== activeDbName()) throw new DOMException("Профиль изменён, загрузка остановлена", "AbortError");
+}
 
 export const cacheSupported = () => typeof caches !== "undefined";
 
@@ -63,6 +76,7 @@ export async function reconcileOfflineCache(): Promise<void> {
 
   for (const row of rows) {
     if (scope !== activeDbName()) return;
+    if (writes.has(writeKey(scope, row.stationId))) continue;
     try {
       const key = audioCacheKeyFor(scope, row.stationId);
       if (await cache.match(key)) continue;
@@ -96,7 +110,11 @@ export async function reconcileOfflineCache(): Promise<void> {
       } catch {
         /* malformed cache key: remove it as unindexed */
       }
-      if (!known.has(id)) await cache.delete(key);
+      // Re-read the index: a download may have completed after `rows` was loaded.
+      if (!known.has(id) && !writes.has(writeKey(scope, id)) && !(await db.offline.get(id)) && !writes.has(writeKey(scope, id))) {
+        if (scope !== activeDbName()) return;
+        await cache.delete(key);
+      }
     }
   } catch {
     /* Cache API мог временно стать недоступен */
@@ -157,23 +175,38 @@ export async function clearAudioScope(dbName: string) {
 }
 
 export async function putOfflineBlob(stationId: string, url: string, body: BodyInit, type: string, size: number) {
-  const cache = await caches.open(CACHE);
-  await cache.put(audioCacheKey(stationId), new Response(body, { headers: { "Content-Type": type, "Content-Length": String(size) } }));
-  await db.offline.put({ stationId, size, ts: Date.now() });
-  void url; // URL хранится в Station/PlaylistItem, а не дублируется в индексе загрузок
+  const scope = activeDbName();
+  return writing(scope, stationId, async () => {
+    const cache = await caches.open(CACHE);
+    assertScope(scope);
+    await cache.put(audioCacheKeyFor(scope, stationId), new Response(body, { headers: { "Content-Type": type, "Content-Length": String(size) } }));
+    assertScope(scope);
+    await db.offline.put({ stationId, size, ts: Date.now() });
+    void url;
+  });
 }
 
 export async function downloadVod(station: Station, onProgress: (loaded: number, total: number) => void, signal?: AbortSignal) {
+  const scope = activeDbName();
+  return writing(scope, station.id, () => saveVod(station, onProgress, signal, scope));
+}
+async function saveVod(station: Station, onProgress: (loaded: number, total: number) => void, signal: AbortSignal | undefined, scope: string) {
   if (!cacheSupported()) throw new Error("Cache API недоступен в этом браузере");
   if (parseCddaTrackUrl(station.url)) {
     const wav = await fetchCddaWav(station.url, signal, onProgress);
+    assertScope(scope);
     await putOfflineBlob(station.id, station.url, wav, "audio/wav", wav.size);
     return wav.size;
   }
   const res = await fetch(station.url, { mode: "cors", signal });
+  assertScope(scope);
   if (!res.ok) throw new Error(`Сервер ответил ${res.status}`);
   const total = Number(res.headers.get("content-length")) || 0;
   const type = res.headers.get("content-type") || "audio/mpeg";
+  if (/text\/html|(?:application|text)\/(?:json|xml)/i.test(type)) {
+    await res.body?.cancel();
+    throw new Error("Сервер вернул страницу или сообщение об ошибке вместо аудиофайла");
+  }
   let size = 0;
   const cache = await caches.open(CACHE);
   if (res.body) {
@@ -183,7 +216,7 @@ export async function downloadVod(station: Station, onProgress: (loaded: number,
     let saveError: unknown;
     // Поглощаем ошибку здесь: при отмене чтения иначе может остаться unhandled rejection.
     const saving = cache
-      .put(audioCacheKey(station.id), new Response(cacheBody, { headers: { "Content-Type": type, ...(total ? { "Content-Length": String(total) } : {}) } }))
+      .put(audioCacheKeyFor(scope, station.id), new Response(cacheBody, { headers: { "Content-Type": type, ...(total ? { "Content-Length": String(total) } : {}) } }))
       .catch((e) => {
         saveError = e;
       });
@@ -206,8 +239,13 @@ export async function downloadVod(station: Station, onProgress: (loaded: number,
   } else {
     const blob = await res.blob();
     size = blob.size;
-    await cache.put(audioCacheKey(station.id), new Response(blob, { headers: { "Content-Type": type, "Content-Length": String(size) } }));
+    await cache.put(audioCacheKeyFor(scope, station.id), new Response(blob, { headers: { "Content-Type": type, "Content-Length": String(size) } }));
   }
+  if (!size) {
+    await cache.delete(audioCacheKeyFor(scope, station.id));
+    throw new Error("Сервер вернул пустой аудиофайл");
+  }
+  assertScope(scope);
   await db.offline.put({ stationId: station.id, size, ts: Date.now() });
   return size;
 }

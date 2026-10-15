@@ -9,7 +9,7 @@ import {
   loadLanguages,
   loadTags,
   registerClick,
-  searchStations,
+  searchStationsPage,
   userRegion,
   type CountryInfo,
   type Found,
@@ -54,6 +54,8 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [more, setMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(0);
+  const retryOffset = useRef(0);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [countries, setCountries] = useState<CountryInfo[]>([]);
   const [languages, setLanguages] = useState<LangInfo[]>([]);
@@ -87,20 +89,24 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
     }
   }, [source]);
 
+  const serverQuery = source === "soma" ? "" : dq;
+  const serverTag = source === "soma" ? "" : tag;
   const run = useCallback(
     async (offset: number) => {
       ctl.current?.abort();
       const c = new AbortController();
       ctl.current = c;
+      retryOffset.current = offset;
       setLoading(true);
       setError(null);
       try {
         let r: Found[] = [];
-        let paged = false;
+        let hasMore = false;
+        let next = 0;
         if (source === "rb") {
-          r = await searchStations({
-            name: dq || undefined,
-            tag: tag || undefined,
+          const result = await searchStationsPage({
+            name: serverQuery || undefined,
+            tag: serverTag || undefined,
             country: country || undefined,
             language: language || undefined,
             codec: codec || undefined,
@@ -110,14 +116,18 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
             offset,
             signal: c.signal,
           });
-          paged = true;
+          r = result.items;
+          hasMore = result.hasMore;
+          next = result.nextOffset;
         } else if (source === "soma") {
           r = await somaChannels();
-        } else if (dq.length >= 2) {
-          r = await gardenSearch(dq, c.signal);
+        } else if (serverQuery.length >= 2) {
+          r = await gardenSearch(serverQuery, c.signal);
         }
+        if (c.signal.aborted || ctl.current !== c) return;
         setItems((prev) => (offset ? [...prev, ...r.filter((x) => !prev.some((p) => p.url === x.url))] : r));
-        setMore(paged && r.length >= PAGE - 3);
+        setMore(hasMore);
+        setNextOffset(next);
       } catch (e) {
         if (c.signal.aborted) return;
         const msg = e instanceof Error ? e.message : "Не удалось загрузить";
@@ -133,12 +143,14 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
         if (!c.signal.aborted) setLoading(false);
       }
     },
-    [source, dq, tag, country, language, codec, minBr, order]
+    [source, serverQuery, serverTag, country, language, codec, minBr, order]
   );
 
   useEffect(() => {
     if (!online) return;
     setItems([]);
+    setMore(false);
+    setNextOffset(0);
     void run(0);
     return () => ctl.current?.abort();
   }, [run, online, nonce]);
@@ -233,8 +245,10 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
             <input
               data-search
               aria-label={source === "garden" ? "Название станции или место" : "Поиск радиостанций"}
+              enterKeyHint="search"
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); setDq(q.trim()); } }}
               maxLength={100}
-              className={cn(inputCls, "pl-10")}
+              className={cn(inputCls, "pl-10 pr-10")}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={source === "garden" ? "Станция или город" : "Название станции: Jazz FM, Europa, BBC…"}
@@ -246,7 +260,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
             )}
           </div>
           {source === "rb" && (
-            <button onClick={() => setFiltersOpen((o) => !o)} className={cn(btnGhost, "relative !px-3.5", filtersOpen && "!border-accent !text-accent")} aria-expanded={filtersOpen}>
+            <button onClick={() => setFiltersOpen((o) => !o)} className={cn(btnGhost, "relative !px-3.5", filtersOpen && "!border-accent !text-accent")} aria-label="Фильтры станций" aria-expanded={filtersOpen}>
               <SlidersHorizontal size={17} />
               <span className="hidden sm:inline">Фильтры</span>
               {activeFilters.length > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[11px] font-bold text-accent-ink">{activeFilters.length}</span>}
@@ -255,7 +269,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
         </div>
 
         {source === "rb" && filtersOpen && (
-          <div className="anim-fade grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="anim-fade station-search-filters grid grid-cols-2 gap-2 lg:grid-cols-5">
             <select value={country} onChange={(e) => setCountry(e.target.value)} className={cn(inputCls, "cursor-pointer")} aria-label="Страна">
               <option value="">Все страны</option>
               {region && countries.some((c) => c.code === region) && <option value={region}>★ Моя страна — {countryName(region)}</option>}
@@ -356,7 +370,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">{loading && !items.length ? "Ищем…" : `Найдено: ${stations.length}`}</p>
+        <p role="status" aria-live="polite" className="text-sm text-muted">{loading && !items.length ? "Ищем…" : `Найдено: ${stations.length}`}</p>
         <div className="flex gap-2">
           <button className={btnGhost + " !px-3 !py-2"} onClick={() => setNonce((n) => n + 1)} aria-label="Обновить">
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
@@ -383,7 +397,7 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
               <ExternalLink size={14} /> Открыть Radio Garden
             </a>
           )}
-          <button onClick={() => setNonce((n) => n + 1)} className="shrink-0 self-start font-semibold underline sm:self-auto">
+          <button onClick={() => void run(retryOffset.current)} className="shrink-0 self-start font-semibold underline sm:self-auto">
             Повторить
           </button>
         </div>
@@ -452,9 +466,9 @@ export function Search({ have, online, onPlay }: { have: Set<string>; online: bo
         )}
       </div>
 
-      {more && stations.length > 0 && (
+      {more && (
         <div className="text-center">
-          <button className={btnGhost} disabled={loading} onClick={() => run(items.length)}>
+          <button className={btnGhost} disabled={loading || q.trim() !== dq} onClick={() => run(nextOffset)}>
             {loading ? <Loader2 size={16} className="animate-spin" /> : null} Показать ещё
           </button>
         </div>

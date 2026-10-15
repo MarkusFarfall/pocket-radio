@@ -5,14 +5,14 @@ import { itemStationId, itemToStation, loadProgress } from "./playlistModel";
 export { itemStationId, itemToStation, loadProgress } from "./playlistModel";
 import { player } from "./player";
 import { connectivity } from "./connectivity";
-import { downloadVod, removeVod } from "./offline";
+import { downloadVod, reconcileOfflineCache, removeVod } from "./offline";
 import { episodeToItem, showEpisodes } from "./podcasts";
 import { exportM3U } from "./m3u";
 import { isLanUrl, uid } from "./templates";
 import { toast } from "./toast";
 import type { FallbackInfo, Playlist, PlaylistFollow, PlaylistItem, Station } from "./types";
 import { snapshotImage } from "./images";
-import { isPlaceholderArtwork } from "./artwork";
+import { artworkUrl, isPlaceholderArtwork } from "./artwork";
 import { fixText } from "./text";
 
 /**
@@ -26,7 +26,7 @@ const PP = "pp:";
 const coverMigrations = new Set<string>();
 
 function usableArtwork(value?: string | null): string | undefined {
-  return value && /^(https:\/\/|data:image\/)/i.test(value) && !isPlaceholderArtwork(value) ? value : undefined;
+  return artworkUrl(value);
 }
 
 export const localUrl = (itemId: string) => `https://local.pocket-radio.invalid/${encodeURIComponent(itemId)}`;
@@ -105,6 +105,7 @@ function dedupe(items: PlaylistItem[]): PlaylistItem[] {
       title: fixText(i.title),
       subtitle: fixText(i.subtitle) || undefined,
       note: fixText(i.note) || undefined,
+      album: fixText(i.album) || undefined,
       genre: fixText(i.genre) || undefined,
       logo: usableArtwork(i.logo),
     }))
@@ -298,7 +299,7 @@ export async function playPlaylist(pl: Playlist, o: { startId?: string; shuffle?
   if (items.length < pl.items.length) toast(`Без сети доступно ${items.length} из ${pl.items.length} треков`, "info");
   if (o.shuffle) items = shuffled(items);
   const prog = await loadProgress(items.map((i) => i.id));
-  const stations = items.map((i) => itemToStation(i, prog.get(i.id)));
+  const stations = items.map((i) => itemToStation({ ...i, logo: i.logo || pl.cover || pl.follow?.art }, prog.get(i.id)));
   const startSid = o.startId ? itemStationId(o.startId) : null;
   const start = (startSid && stations.find((s) => s.id === startSid)) || stations[0];
   player.pin(stations);
@@ -359,6 +360,7 @@ export async function downloadItems(playlistId: string, items: PlaylistItem[], l
     toast("Нет интернета: скачать сейчас нельзя", "error");
     return;
   }
+  await reconcileOfflineCache();
   const off = new Set((await db.offline.toArray()).map((o) => o.stationId));
   const todo = downloadable(items, off);
   if (!todo.length) {
@@ -370,10 +372,12 @@ export async function downloadItems(playlistId: string, items: PlaylistItem[], l
   } catch {
     /* необязательно */
   }
+  if (dl.running) { toast("Уже идёт скачивание", "info"); return; }
   const ac = new AbortController();
   ctl = ac;
   setDl({ running: true, playlistId, label, done: 0, total: todo.length, failed: 0, current: "", pct: 0 });
   let quota = false;
+  let failure = "";
   for (const it of todo) {
     if (ac.signal.aborted) break;
     setDl({ ...dl, current: it.title, pct: 0 });
@@ -394,6 +398,7 @@ export async function downloadItems(playlistId: string, items: PlaylistItem[], l
         quota = true;
         break;
       }
+      failure ||= /fetch|network|load failed/i.test(err.message) ? "Нет связи с источником или сервер запрещает скачивание" : err.message || "Не удалось сохранить аудио";
       setDl({ ...dl, failed: dl.failed + 1 });
     }
   }
@@ -405,7 +410,7 @@ export async function downloadItems(playlistId: string, items: PlaylistItem[], l
   await gcUnusedPlaylistAudio(todo);
   if (quota) toast("Не хватило места на устройстве. Удалите лишнее в Настройки → Данные", "error");
   else if (aborted) toast(`Скачивание остановлено: готово ${fin.done} из ${fin.total}`, "info");
-  else if (fin.failed) toast(`Скачано ${fin.done}, не удалось ${fin.failed}: сервер не разрешает скачивание (CORS) — такие треки играют только онлайн`, "error");
+  else if (fin.failed) toast(`Скачано ${fin.done}, не удалось ${fin.failed}. ${failure}`, "error");
   else toast(`Готово: скачано ${fin.done} — теперь это работает без интернета`, "ok");
 }
 

@@ -76,7 +76,9 @@ export interface SearchOpts {
   signal?: AbortSignal;
 }
 
-async function searchOnce(o: SearchOpts): Promise<Found[]> {
+export interface StationSearchPage { items: Found[]; nextOffset: number; hasMore: boolean }
+
+async function searchOnce(o: SearchOpts): Promise<StationSearchPage> {
   const q = new URLSearchParams();
   if (o.name) q.set("name", o.name);
   if (o.tag) q.set("tag", o.tag);
@@ -97,12 +99,17 @@ async function searchOnce(o: SearchOpts): Promise<Found[]> {
   const seen = new Set<string>();
   const out: Found[] = [];
   for (const s of list) {
-    const url = (s.url_resolved || s.url || "").trim();
-    if (!url || !/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    let url: string;
+    try {
+      const parsed = new URL((s.url_resolved || s.url || "").trim());
+      if (!["http:", "https:"].includes(parsed.protocol)) continue;
+      url = parsed.href;
+    } catch { continue; }
+    if (seen.has(url)) continue;
     seen.add(url);
     out.push(mapStation(s, url));
   }
-  return out;
+  return { items: out, nextOffset: (o.offset ?? 0) + (o.limit ?? 30), hasMore: list.length >= (o.limit ?? 30) };
 }
 
 /* ——— Транслитерация: фолбэк-поиск по второму алфавиту ———
@@ -173,7 +180,7 @@ function mergeFound(groups: Found[][]): Found[] {
   const out: Found[] = [];
   for (const g of groups) {
     for (const s of g) {
-      const key = s.url.toLowerCase();
+      const key = new URL(s.url).href;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(s);
@@ -182,17 +189,22 @@ function mergeFound(groups: Found[][]): Found[] {
   return out;
 }
 
-export async function searchStations(o: SearchOpts): Promise<Found[]> {
+/** Offsets belong to each upstream query, not to the merged/deduplicated display list. */
+export async function searchStationsPage(o: SearchOpts): Promise<StationSearchPage> {
   const primary = await searchOnce(o);
   if (!o.name) return primary;
+  const extra = await Promise.all(translitVariants(o.name).map(v =>
+    searchOnce({ ...o, name: v }).catch(error => {
+      if (o.signal?.aborted) throw error;
+      return { items: [], nextOffset: primary.nextOffset, hasMore: false };
+    })
+  ));
+  if (o.signal?.aborted) throw new DOMException("Запрос отменён", "AbortError");
+  return { items: mergeFound([primary.items, ...extra.map(p => p.items)]), nextOffset: primary.nextOffset, hasMore: primary.hasMore || extra.some(p => p.hasMore) };
+}
 
-  const variants = translitVariants(o.name);
-  if (variants.length === 0) return primary;
-
-  const extra = await Promise.all(
-    variants.map((v) => searchOnce({ ...o, name: v }).catch(() => [] as Found[])),
-  );
-  return mergeFound([primary, ...extra]);
+export async function searchStations(o: SearchOpts): Promise<Found[]> {
+  return (await searchStationsPage(o)).items;
 }
 
 export interface TagInfo {
@@ -318,7 +330,7 @@ function mapStation(s: RbStation, url: string): Found {
   const favicon = (s.favicon || "").trim();
   // Берём http/https-фавикон (http апгрейдим в https — хосты фавиконов почти всегда
   // отдают по обоим протоколам). .ico/.svg тоже принимаем: слишком мелкие/битые отсечёт
-  // Cover по naturalWidth<48 и покажет генерируемую обложку. Пустой favicon -> undefined.
+  // Cover по ошибке декодирования и покажет генерируемую обложку. Пустой favicon -> undefined.
   const logoUrl = /^https?:\/\//i.test(favicon) ? favicon.replace(/^http:\/\//i, "https://") : undefined;
   const isHls = s.hls === 1 || /\.m3u8(\?|$)/i.test(url);
   const place = [s.state, countryName(s.countrycode, s.country)].filter(Boolean);

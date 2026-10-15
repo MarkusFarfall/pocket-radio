@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from "react";
-import { isGeneratedWaveformCover, isPlaceholderArtwork } from "../lib/artwork";
+import { artworkUrl, isGeneratedWaveformCover } from "../lib/artwork";
 import { glyphIcon, type GlyphSource } from "../lib/glyphs";
 import { hueOf } from "../lib/templates";
 import { cn } from "../utils/cn";
@@ -8,7 +8,6 @@ export interface CoverSource extends GlyphSource {
   logo?: string;
 }
 
-const badLogos = new Set<string>();
 
 export const Cover = memo(function Cover({
   s,
@@ -25,22 +24,24 @@ export const Cover = memo(function Cover({
   fit?: "auto" | "contain" | "cover";
 }) {
   const mediaArtwork = s.kind === "vod" || /подкаст|podcast|музык|music|soundtrack|альбом|album/i.test(`${s.genre ?? ""} ${s.name ?? ""}`);
-  const logo = s.logo && /^(https:\/\/|data:image\/)/i.test(s.logo) && !badLogos.has(s.logo) && !isPlaceholderArtwork(s.logo)
-    ? s.logo
-    : undefined;
-  const [logoOk, setLogoOk] = useState(false);
-  const [logoBad, setLogoBad] = useState(false);
+  const logo = artworkUrl(s.logo);
+  const [image, setImage] = useState<{ url?: string; state?: "ready" | "failed" | "invalid" }>({});
+  const logoOk = image.url === logo && image.state === "ready";
+  const logoBad = image.url === logo && (image.state === "failed" || image.state === "invalid");
   useEffect(() => {
-    setLogoOk(false);
-    setLogoBad(false);
-  }, [logo]);
+    if (image.state !== "failed") return;
+    const retry = () => { if (navigator.onLine && !document.hidden) setImage({}); };
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => { window.removeEventListener("online", retry); document.removeEventListener("visibilitychange", retry); };
+  }, [image]);
   const Icon = glyphIcon(s);
   const resolvedFit = fit === "auto" ? (mediaArtwork ? "cover" : "contain") : fit;
   const showLogo = !!logo && !logoBad;
   const fill = size === "fill";
   const px = fill ? undefined : size;
   const iconSize = px ? Math.round(px * 0.4) : undefined;
-  // Обложка для станций без логотипа: детерминированный градиент по имени + инициалы.
+  // Без реальной картинки: инициалы станции или музыкальная иконка, не чужая обложка.
   // Даёт каждой станции свой цвет и не выглядит «пусто». Перекрывается реальным лого,
   // если оно есть и загрузилось.
   const name = s.name ?? "";
@@ -57,6 +58,7 @@ export const Cover = memo(function Cover({
     <div
       className={cn("cover relative shrink-0 select-none overflow-hidden rounded-xl bg-surface-2", className)}
       style={{ width: fill ? "100%" : px, height: fill ? "100%" : px, containerType: "inline-size" }}
+      data-artwork={!logo ? "missing" : logoBad ? "error" : logoOk ? "ready" : "loading"}
       aria-hidden
     >
       <div
@@ -64,7 +66,7 @@ export const Cover = memo(function Cover({
         style={{ background: `linear-gradient(140deg, hsl(${hue} 55% 46%), hsl(${(hue + 45) % 360} 62% 30%))` }}
       />
       <div className="absolute inset-0 flex items-center justify-center">
-        {initials ? (
+        {initials && !mediaArtwork ? (
           <span
             className="font-semibold tracking-tight text-white/90 drop-shadow-sm"
             style={{ fontSize: px ? Math.round(px * 0.38) : "38cqw" }}
@@ -81,6 +83,7 @@ export const Cover = memo(function Cover({
       </div>
       {showLogo && (
         <img
+          key={logo}
           src={logo}
           alt=""
           loading={eager || logo?.startsWith("data:") ? "eager" : "lazy"}
@@ -88,14 +91,12 @@ export const Cover = memo(function Cover({
           referrerPolicy="no-referrer"
           draggable={false}
           onLoad={(e) => {
-            if (e.currentTarget.naturalWidth < 48 || isGeneratedWaveformCover(e.currentTarget)) {
-              badLogos.add(logo!);
-              setLogoBad(true);
-            } else setLogoOk(true);
+            if (e.currentTarget.naturalWidth < 2 || e.currentTarget.naturalHeight < 2 || (mediaArtwork && isGeneratedWaveformCover(e.currentTarget))) {
+              setImage({ url: logo, state: "invalid" });
+            } else setImage({ url: logo, state: "ready" });
           }}
           onError={() => {
-            badLogos.add(logo!);
-            setLogoBad(true);
+            setImage({ url: logo, state: "failed" });
           }}
           className={cn(
             "absolute inset-0 h-full w-full transition-opacity duration-300",

@@ -427,7 +427,7 @@ class Engine {
         if (playlist) {
           const items = playlist.items.filter((item) => item && typeof item.id === "string" && typeof item.url === "string");
           const progress = await loadProgress(items.map((item) => item.id));
-          const stations = items.map((item) => itemToStation(item, progress.get(item.id)));
+          const stations = items.map((item) => itemToStation({ ...item, logo: item.logo || playlist.cover || playlist.follow?.art }, progress.get(item.id)));
           const byId = new Map(stations.map((item) => [item.id, item]));
           st = byId.get(id);
           if (st) {

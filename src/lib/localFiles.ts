@@ -1,3 +1,4 @@
+import { imageFileToDataUrl } from "./images";
 import { readTags } from "./id3";
 import { itemStationId, localUrl } from "./playlists";
 import { uid } from "./templates";
@@ -57,6 +58,11 @@ export async function addLocalFiles(files: File[]): Promise<{ items: PlaylistIte
     try {
       const id = `lf-${uid()}`;
       const [tags, duration] = await Promise.all([readTags(file), audioDuration(file)]);
+      let logo: string | undefined;
+      if (tags.picture) {
+        try { logo = await imageFileToDataUrl(new File([tags.picture], "cover", { type: tags.picture.type })); }
+        catch { /* A corrupt picture must not prevent importing playable audio. */ }
+      }
       const ext = (file.name.split(".").pop() ?? "").toLowerCase();
       await putOfflineBlob(itemStationId(id), localUrl(id), file, file.type || MIME[ext] || "audio/mpeg", file.size);
       items.push({
@@ -66,6 +72,8 @@ export async function addLocalFiles(files: File[]): Promise<{ items: PlaylistIte
         url: localUrl(id),
         kind: "vod",
         genre: "Музыка",
+        album: tags.album,
+        logo,
         duration,
         local: true,
         addedAt: Date.now(),

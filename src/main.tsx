@@ -7,6 +7,7 @@ import "./player-experiences.css";
 import "./app-designs.css";
 import "./premium-designs.css";
 import "./app-player.css";
+import "./music-search.css";
 import "./lib/appDesign";
 // применяют сохранённые стиль интерфейса и логотип до первой отрисовки
 import "./lib/uiStyle";

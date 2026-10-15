@@ -303,7 +303,7 @@ function Detail({ pl, off, online, onBack, onEdit }: { pl: Playlist; off: Set<st
                   <span className={cn("group-hover:opacity-0", cur && "text-accent")}>{playing ? <Equalizer active className="h-3.5" /> : n + 1}</span>
                   <span className="absolute inset-0 flex items-center justify-center text-ink opacity-0 group-hover:opacity-100">{playing ? <Pause size={17} className="fill-current" /> : <Play size={17} className="ml-0.5 fill-current" />}</span>
                 </button>
-                <Cover s={{ name: i.title, logo: i.logo, kind: "vod", icon: pl.follow ? "g:podcast" : "g:music" }} size={40} className="rounded-lg" />
+                <Cover s={{ name: i.title, logo: i.logo || pl.cover || pl.follow?.art, kind: "vod", icon: pl.follow ? "g:podcast" : "g:music" }} size={40} className="rounded-lg" />
                 <button onClick={() => playFrom(i)} className="min-w-0 flex-1 px-1 text-left">
                   <span className={cn("block truncate text-sm font-semibold", cur && "text-accent")}>{i.title}</span>
                   <span className="block truncate text-xs text-muted">

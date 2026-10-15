@@ -2,7 +2,7 @@ import Dexie, { type Table } from "dexie";
 import type { Draft, OfflineItem, PlayEvent, Playlist, PlaylistItem, SavedTrack, Session, Station } from "./types";
 import { TEMPLATES, guessKind, normalizeUrl, uid, validUrl } from "./templates";
 import { fixText } from "./text";
-import { isPlaceholderArtwork } from "./artwork";
+import { artworkUrl, isPlaceholderArtwork } from "./artwork";
 
 export interface Setting {
   key: string;
@@ -153,7 +153,7 @@ export function draftToStation(d: Draft, existing?: Station): Station {
     icon: ((d.icon ?? existing?.icon ?? "") as string).startsWith("g:") ? (d.icon ?? existing?.icon ?? "") : "",
     logo: (() => {
       const l = d.logo ?? existing?.logo;
-      return l && /^(https:\/\/|data:image\/)/i.test(l) && !isPlaceholderArtwork(l) ? l : undefined;
+      return artworkUrl(l);
     })(),
     note: fixText(d.note ?? existing?.note ?? ""),
     bitrate: d.bitrate ?? existing?.bitrate ?? TEMPLATES.find((t) => t.kind === kind)?.bitrate ?? 128,
@@ -381,6 +381,7 @@ function importedPlaylist(value: unknown): Playlist | null {
       subtitle: typeof entry.subtitle === "string" ? fixText(entry.subtitle).slice(0, 240) : undefined,
       url: normalizeUrl(entry.url),
       kind: isStreamKind(entry.kind) ? entry.kind : guessKind(entry.url),
+      album: typeof entry.album === "string" ? fixText(entry.album).slice(0, 200) : undefined,
       logo: safeImage(entry.logo),
       genre: typeof entry.genre === "string" ? fixText(entry.genre).slice(0, 120) : undefined,
       duration: finiteNumber(entry.duration) && entry.duration >= 0 ? entry.duration : undefined,
