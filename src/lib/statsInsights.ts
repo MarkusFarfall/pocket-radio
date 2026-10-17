@@ -3,7 +3,7 @@ import { addCalendarDays, dayStart, secondsInRange } from "./stats";
 
 /**
  * Производные величины для страницы статистики: профиль слушателя, тепловая карта,
- * достижения, рекорды и сравнения. Здесь только чистые функции — их удобно проверять
+ * рекорды и сравнения. Здесь только чистые функции — их удобно проверять
  * без браузера, а страница остаётся тонкой.
  */
 
@@ -316,68 +316,6 @@ export function buildHeatmap(sessions: Session[], now: number, weeks = 53): Heat
     maxSeconds: values.length ? Math.max(...values) : 0,
     activeDays: values.filter((seconds) => seconds >= 5 * 60).length,
   };
-}
-
-/* ------------------------------------------------------------------ достижения */
-
-export type AchievementIcon =
-  | "rocket" | "clock" | "flame" | "trophy" | "compass" | "moon"
-  | "wifi" | "disc" | "crown" | "sparkles" | "headphones" | "globe" | "calendar";
-
-export interface Achievement {
-  id: string;
-  title: string;
-  hint: string;
-  icon: AchievementIcon;
-  current: number;
-  target: number;
-  unit: "seconds" | "count" | "days" | "percent";
-  unlocked: boolean;
-  progress: number;
-}
-
-export interface AchievementInput {
-  totalSeconds: number;
-  sessionCount: number;
-  stationCount: number;
-  genreCount: number;
-  streak: number;
-  nightShare: number;
-  offlineSeconds: number;
-  topStationShare: number;
-  cityCount: number;
-}
-
-export function buildAchievements(input: AchievementInput): Achievement[] {
-  const { totalSeconds, sessionCount, stationCount, genreCount, streak, nightShare, offlineSeconds, topStationShare, cityCount } = input;
-  const make = (
-    id: string, title: string, hint: string, icon: AchievementIcon,
-    current: number, target: number, unit: Achievement["unit"],
-  ): Achievement => ({
-    id, title, hint, icon, current, target, unit,
-    unlocked: current >= target,
-    progress: Math.max(0, Math.min(100, target > 0 ? (current / target) * 100 : 0)),
-  });
-
-  return [
-    make("first", "Первый эфир", "Сохранена хотя бы одна сессия", "rocket", sessionCount, 1, "count"),
-    make("hour", "Первый час", "Час суммарного прослушивания", "clock", totalSeconds, 3600, "seconds"),
-    make("ten", "Десять часов", "Половина суток в звуке", "headphones", totalSeconds, 10 * 3600, "seconds"),
-    make("hundred", "Сотня часов", "Сто часов на этом устройстве", "trophy", totalSeconds, 100 * 3600, "seconds"),
-    make("streak7", "Неделя подряд", "Семь активных дней без пропусков", "flame", streak, 7, "days"),
-    make("streak30", "Месяц в эфире", "Тридцать дней подряд", "calendar", streak, 30, "days"),
-    make("stations", "Коллекционер", "Двадцать пять разных станций", "disc", stationCount, 25, "count"),
-    make("genres", "Полиглот жанров", "Десять разных жанров", "compass", genreCount, 10, "count"),
-    make("cities", "Географ", "Пять городов в эфире", "globe", cityCount, 5, "count"),
-    make("night", "Ночной дозор", "Четверть времени — после полуночи", "moon", Math.round(nightShare), 25, "percent"),
-    make("offline", "Свой запас", "Час прослушивания без интернета", "wifi", offlineSeconds, 3600, "seconds"),
-    make("loyal", "Верная частота", "Любимая станция — больше половины времени", "crown", Math.round(topStationShare), 50, "percent"),
-    make("spark", "Знакомство", "Пять разных жанров", "sparkles", genreCount, 5, "count"),
-  ];
-}
-
-export function unlockedCount(items: Achievement[]): number {
-  return items.filter((item) => item.unlocked).length;
 }
 
 /* ------------------------------------------------------------------ сравнения */

@@ -93,7 +93,7 @@ test("statistics total local listening seconds, offline share, and period totals
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });
 
-test("analytics blocks: persona, year map, rhythm, records and achievements react to real listening", async ({ page }) => {
+test("analytics blocks: persona, year map, rhythm and records react to real listening", async ({ page }) => {
   await openStats(page);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -166,15 +166,11 @@ test("analytics blocks: persona, year map, rhythm, records and achievements reac
   await expect(page.locator(".stats-weekly-cell")).toHaveCount(168);
   await expect(page.getByText(/Ночь · 0–5 ·/)).toBeVisible();
 
-  // Рекорды и достижения.
+  // Рекорды: личные максимумы без игровых механик.
   await expect(page.getByText("Самая длинная сессия", { exact: true })).toBeVisible();
   await expect(page.getByText("3 ч 0 м", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Первый час", { exact: true })).toBeVisible();
-  await expect(page.getByText("Ночной дозор", { exact: true })).toBeVisible();
-  const badges = page.locator(".stats-badge");
-  await expect(badges).toHaveCount(13);
-  const unlocked = await page.locator('.stats-badge[data-unlocked="true"]').count();
-  expect(unlocked).toBeGreaterThanOrEqual(3);
+  await expect(page.locator(".stats-record")).toHaveCount(6);
+  await expect(page.getByText("Достижения", { exact: false })).toHaveCount(0);
 
   // Сравнения в понятных единицах.
   await expect(page.locator(".stats-fact")).toHaveCount(4);

@@ -7,17 +7,10 @@ import {
   CalendarCheck,
   CalendarDays,
   Clock3,
-  Compass,
-  Crown,
-  Disc3,
   Flame,
-  Globe2,
-  Headphones,
   Info,
-  Moon,
   Music2,
   Radio,
-  Rocket,
   Signal,
   Sparkles,
   Trophy,
@@ -27,7 +20,6 @@ import {
 import { useEvents, useSessions } from "../lib/hooks";
 import { addCalendarDays, dayStart, MIN_ACTIVE_DAY_SECONDS, secondsByLocalDay, secondsInRange, streakDays } from "../lib/stats";
 import {
-  buildAchievements,
   buildComparisons,
   buildHeatmap,
   buildPersona,
@@ -36,11 +28,9 @@ import {
   partShares,
   secondsByHour,
   secondsByWeekday,
-  unlockedCount,
   WEEKDAYS,
   WEEKDAYS_SHORT,
   weeklyMatrix,
-  type Achievement,
   type HeatCell,
 } from "../lib/statsInsights";
 import { fmtBytes, fmtDuration, KIND_LABEL } from "../lib/templates";
@@ -501,44 +491,6 @@ function WeeklyRhythm({ matrix }: { matrix: number[][] }) {
   );
 }
 
-const BADGE_ICONS: Record<Achievement["icon"], typeof Trophy> = {
-  rocket: Rocket,
-  clock: Clock3,
-  flame: Flame,
-  trophy: Trophy,
-  compass: Compass,
-  moon: Moon,
-  wifi: WifiOff,
-  disc: Disc3,
-  crown: Crown,
-  sparkles: Sparkles,
-  headphones: Headphones,
-  globe: Globe2,
-  calendar: CalendarCheck,
-};
-
-function Badge({ item }: { item: Achievement }) {
-  const Icon = BADGE_ICONS[item.icon] ?? Trophy;
-  const currentText = item.unit === "seconds"
-    ? fmtDuration(item.current, true)
-    : item.unit === "percent"
-      ? `${Math.min(100, Math.round(item.current))}%`
-      : item.unit === "days"
-        ? `${Math.min(Math.round(item.current), item.target)} / ${item.target}`
-        : formatCount(Math.min(item.current, item.target));
-  return (
-    <div className="stats-badge" data-unlocked={item.unlocked}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="stats-badge-icon"><Icon size={16} /></span>
-        <span className="stats-badge-progress">{item.unlocked ? "получено" : currentText}</span>
-      </div>
-      <div className="stats-badge-title">{item.title}</div>
-      <div className="stats-badge-hint">{item.hint}</div>
-      <div className="stats-badge-track"><i style={{ width: `${item.progress}%` }} /></div>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ страница */
 
 export function Stats({ stations }: { stations: Station[] }) {
@@ -636,17 +588,6 @@ export function Stats({ stations }: { stations: Station[] }) {
     const nightShare = partShares(hourly).find((part) => part.id === "night")?.share ?? 0;
     const peakHour = startsPerHour.some((count) => count > 0) ? peakHourIndex : null;
 
-    const achievements = buildAchievements({
-      totalSeconds,
-      sessionCount: activeSessions.length,
-      stationCount: stationTotals.size,
-      genreCount,
-      streak,
-      nightShare,
-      offlineSeconds,
-      topStationShare,
-      cityCount: citySet.size,
-    });
     const records = buildRecords({
       bestDayDay: bestDay.day,
       bestDaySeconds: bestDay.seconds,
@@ -689,7 +630,6 @@ export function Stats({ stations }: { stations: Station[] }) {
       weekdaySeconds,
       weekly: weeklyMatrix(sessions, from, now),
       persona,
-      achievements,
       records,
       facts: buildComparisons(totalSeconds),
       heatmap: buildHeatmap(sessions, now),
@@ -707,7 +647,6 @@ export function Stats({ stations }: { stations: Station[] }) {
   const hasListening = data.totalSeconds > 0;
   const shares = partShares(data.hourly);
   const mainPart = shares.reduce((best, part) => part.share > best.share ? part : best, shares[0]);
-  const unlocked = unlockedCount(data.achievements);
   const feed = useMemo(() => {
     const groups: { day: number; label: string; rows: Session[] }[] = [];
     for (const session of data.recent) {
@@ -904,16 +843,6 @@ export function Stats({ stations }: { stations: Station[] }) {
             </div>
           </Panel>
 
-          <Panel
-            title="Достижения"
-            subtitle="Открываются по мере прослушивания — без рейтингов и сравнений с другими"
-            action={<span className="rounded-full bg-accent/10 px-2.5 py-1 text-[11px] font-bold text-accent">{unlocked} из {data.achievements.length}</span>}
-          >
-            <div className="stats-badges">
-              {data.achievements.map((item) => <Badge key={item.id} item={item} />)}
-            </div>
-          </Panel>
-
           <Panel title="Если перевести в понятное" subtitle="Приблизительные сравнения — считаются из суммарного времени">
             <div className="stats-facts">
               {data.facts.map((fact) => (
@@ -1002,7 +931,7 @@ export function Stats({ stations }: { stations: Station[] }) {
             <p>
               Всё считается на этом устройстве и никуда не отправляется. В сессии записывается общий итог секунд, а не
               точная шкала: при пересечении полуночи или границы периода время делится пропорционально. Паузы внутри
-              сессии восстановить нельзя, поэтому достижения и сравнения — оценка, а не измерение. Трафик считается по
+              сессии восстановить нельзя, поэтому рекорды и сравнения — оценка, а не измерение. Трафик считается по
               битрейту, а не по счётчику сети.
             </p>
           </div>
@@ -1013,7 +942,7 @@ export function Stats({ stations }: { stations: Station[] }) {
           <h2 className="mt-4 font-display text-xl font-bold">Пока тихо</h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted">
             За выбранный период нет сохранённых прослушиваний. Включите станцию — здесь появятся портрет слушателя,
-            карта года, ритм недели и достижения.
+            карта года, ритм недели и рекорды.
           </p>
           {period !== 0 && (
             <button onClick={() => changePeriod(0)} className="mt-5 min-h-10 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-ink transition hover:brightness-110">
@@ -1021,7 +950,7 @@ export function Stats({ stations }: { stations: Station[] }) {
             </button>
           )}
           <div className="mt-6 grid grid-cols-2 gap-2 text-left sm:grid-cols-4">
-            {["Портрет слушателя", "Карта года", "Ритм недели", "Достижения"].map((item) => (
+            {["Портрет слушателя", "Карта года", "Ритм недели", "Рекорды"].map((item) => (
               <div key={item} className="rounded-xl border border-dashed border-line px-3 py-2 text-[11px] text-muted">{item}</div>
             ))}
           </div>
