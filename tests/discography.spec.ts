@@ -66,6 +66,7 @@ async function mockSources(page: Page, calls: SearchCalls, archiveDocs = 0, mbSt
     return route.fulfill(json({ response: { numFound: docs.length, docs } }));
   });
   await page.route("https://archive.org/metadata/**", (route) => route.fulfill(json({ metadata: { title: "Бордерлайн", artist: "Земфира" }, files: [{ name: "01.mp3" }] })));
+  await page.route("https://api.audius.co/**", (route) => route.fulfill(json({ data: [] })));
 }
 
 async function boot(page: Page, width = 390) {
@@ -170,22 +171,24 @@ test("MusicBrainz недоступен: включается резерв Apple 
   expect(calls.artist).toBeGreaterThan(1);
 });
 
-test("релиз из дискографии ищется в Internet Archive, и находится путь назад", async ({ page }) => {
+test("релиз из дискографии открывает проверку источников и запоминает результат", async ({ page }) => {
   const calls: SearchCalls = { artist: 0, groups: 0, archive: [] };
   await mockSources(page, calls, 2);
   await boot(page);
   await artistSearch(page);
   await panel(page).getByRole("button", { name: /^Дискография: Земфира/ }).click();
-  await panel(page).getByRole("button", { name: "Найти в каталоге: Бордерлайн" }).click();
+  await panel(page).getByRole("button", { name: "Где слушать: Бордерлайн" }).click();
 
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("tab", { name: /Archive/ })).toBeVisible();
   await expect.poll(() => calls.archive.some((q) => q.includes('creator:"Земфира"') && q.includes('title:"Бордерлайн"'))).toBe(true);
-  await expect(page.getByText("«Бордерлайн» · Земфира")).toBeVisible();
-  await expect(page.getByText("В Internet Archive: 2")).toBeHidden();
+  const rows = dialog.locator(".release-archive-row");
+  await expect(rows.first()).toContainText("Бордерлайн");
 
-  await page.getByRole("button", { name: "Вернуться к дискографии: Земфира" }).click();
-  await expect(panel(page)).toBeVisible();
-  await panel(page).getByRole("button", { name: /^Дискография: Земфира/ }).click();
-  await expect(panel(page).getByText("В Internet Archive: 2")).toBeVisible();
+  await dialog.getByRole("button", { name: "Закрыть" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(panel(page).getByText(/В открытых источниках: \d+/)).toBeVisible();
 });
 
 test("«назад» выходит из результатов поиска в коллекции", async ({ page }) => {

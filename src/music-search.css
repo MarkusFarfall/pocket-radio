@@ -183,3 +183,31 @@
 @media(max-width:360px) {
   .discography-release > span:nth-of-type(1) { width: 38px; height: 38px; }
 }
+
+/* ----------------------------------- карточка релиза: все источники ----------------------------------- */
+.release-sources { display: flex; flex-direction: column; min-height: 0; }
+.release-sources-head { display: flex; gap: 14px; padding: 16px 18px 12px; align-items: flex-start; }
+.release-sources-tabs { display: flex; gap: 6px; padding: 0 14px 10px; overflow-x: auto; scrollbar-width: none; }
+.release-sources-tabs::-webkit-scrollbar { display: none; }
+.release-source-tab { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line, #2a3340); border-radius: 999px; font-size: .8rem; font-weight: 600; color: var(--muted, #8b95a5); background: transparent; white-space: nowrap; transition: background .15s, color .15s, border-color .15s; }
+.release-source-tab.is-active { background: color-mix(in srgb, var(--accent, #e8603c) 12%, transparent); border-color: color-mix(in srgb, var(--accent, #e8603c) 45%, transparent); color: var(--accent, #e8603c); }
+.release-source-count { min-width: 20px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 14%, transparent); font-size: .7rem; text-align: center; }
+.release-sources-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 12px; }
+.release-archive-list { display: flex; flex-direction: column; gap: 2px; }
+.release-archive-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px; border-radius: 12px; text-align: left; transition: background .15s; }
+.release-archive-row:hover { background: var(--surface-2, #1b222c); }
+.release-sources-summary { display: flex; gap: 10px; margin-top: 12px; padding: 14px; border: 1px dashed var(--line, #2a3340); border-radius: 14px; }
+.release-sources-foot { display: grid; gap: 6px; border-top: 1px solid var(--line, #2a3340); padding: 10px 16px 14px; font-size: .68rem; line-height: 1.45; color: var(--muted, #8b95a5); }
+@media (max-width: 440px) {
+  /* Четыре источника должны быть видны целиком: переносим вкладки, а не прячем за прокруткой. */
+  .release-sources-tabs { flex-wrap: wrap; overflow: visible; row-gap: 6px; }
+  .release-source-tab { flex: 1 1 auto; justify-content: center; padding: 8px 9px; }
+}
+@media (max-width: 640px) {
+  .release-sources-head { padding: 12px 14px 10px; gap: 10px; }
+  .release-sources-head h3 { font-size: 1rem; }
+  .release-sources-body { padding: 2px 10px 10px; }
+  .release-source-tab { padding: 8px 10px; font-size: .74rem; }
+  .release-archive-row { padding: 7px; gap: 9px; }
+  .release-sources-foot { font-size: .64rem; padding: 9px 12px 12px; }
+}

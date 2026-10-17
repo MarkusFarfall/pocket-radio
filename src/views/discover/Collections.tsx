@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Disc3, Download, ExternalLink, FileAudio, Library, ListMusic, ListPlus, Loader2, Pause, Play, RefreshCw, Search as SearchIcon, ShieldAlert, Shuffle, WifiOff, X } from "lucide-react";
 import type { ViewProps } from "../shared";
-import { ARCHIVE_GENRES, COLLECTIONS, COLLECTION_GROUPS, albumTracks, findArchiveGenre, inspectAlbum, releaseLookupQuery, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope, type AlbumContents, type AlbumInspection, type ArchiveGenre } from "../../lib/archive";
+import { ARCHIVE_GENRES, COLLECTIONS, COLLECTION_GROUPS, albumTracks, findArchiveGenre, inspectAlbum, searchAlbums, searchTextAlbums, textQuery, type Album, type AlbumSearchScope, type AlbumContents, type AlbumInspection, type ArchiveGenre } from "../../lib/archive";
 import { searchOpenverseTracks } from "../../lib/openverse";
 import { searchCommonsTracks } from "../../lib/commons";
+import { searchAudiusTracks } from "../../lib/audius";
 import { genreSearchTerm, type DiscoveredMusicTrack, type DiscoveredMusicProvider } from "../../lib/discoveredMusic";
 import { GLYPHS } from "../../lib/glyphs";
 import { createPlaylist, downloadItems, itemStationId, itemToStation } from "../../lib/playlists";
@@ -15,6 +16,8 @@ import { fmtClock } from "../../lib/templates";
 import { toast } from "../../lib/toast";
 import { cn } from "../../utils/cn";
 import { OfflineMusicLibrary } from "../../components/OfflineMusicLibrary";
+import { DiscoveredTrackRow } from "../../components/DiscoveredTrackRow";
+import { ReleasePanel } from "./ReleasePanel";
 import { Cover, Equalizer, Modal, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 
 const fmtNum = (n: number) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -101,47 +104,6 @@ function AlbumRow({ album, onOpen }: { album: Album; onOpen: () => void }) {
     </button>
   );
 }
-
-function DiscoveredTrackRow({
-  track,
-  onPlay,
-  onAdd,
-}: {
-  track: DiscoveredMusicTrack;
-  onPlay: () => void;
-  onAdd: (download: boolean) => void;
-}) {
-  return (
-    <article data-provider-track={track.id} className="flex items-center gap-2 rounded-xl p-2 transition hover:bg-surface-2 sm:gap-3">
-      <Cover s={{ name: track.title, logo: track.logo, kind: "vod", genre: "Музыка", icon: "g:music" }} size={46} className="shrink-0 rounded-lg" eager fit="cover" />
-      <div className="min-w-0 flex-1">
-        <div className="line-clamp-2 text-sm font-semibold leading-snug">{track.title}</div>
-        <div className="mt-0.5 truncate text-xs text-muted">{track.creator || "Автор не указан"} · {track.providerName}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
-          <a className="font-semibold text-accent hover:underline" href={track.licenseUrl || track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Лицензия ${track.licenseName}: ${track.title}`}>
-            {track.licenseName}
-          </a>
-          {track.duration ? <span>{fmtClock(track.duration)}</span> : null}
-          <a className="inline-flex items-center gap-0.5 hover:text-accent" href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Оригинал: ${track.title}`}>
-            Оригинал <ExternalLink size={10} />
-          </a>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button type="button" onClick={onPlay} className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-ink transition hover:brightness-95" aria-label={`Слушать «${track.title}»`} title="Слушать">
-          <Play size={15} className="ml-0.5 fill-current" />
-        </button>
-        <button type="button" onClick={() => onAdd(false)} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface hover:text-ink" aria-label={`В плейлист: ${track.title}`} title="Добавить в плейлист">
-          <ListPlus size={17} />
-        </button>
-        <button type="button" onClick={() => onAdd(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface hover:text-accent" aria-label={`Скачать офлайн: ${track.title}`} title="Добавить и скачать офлайн">
-          <Download size={16} />
-        </button>
-      </div>
-    </article>
-  );
-}
-
 
 function CollectionCard({ c, onClick }: { c: (typeof COLLECTIONS)[number]; onClick: () => void }) {
   const G = GLYPHS[c.glyph]?.icon ?? GLYPHS.music.icon;
@@ -364,13 +326,9 @@ interface Active {
   scope?: AlbumSearchScope;
   genre?: ArchiveGenre;
   provider?: MusicSource;
-  /** Готовый запрос (например, поиск конкретного релиза из дискографии). */
-  exactQuery?: string;
 }
 
 /* ---------------------------------------- дискография исполнителя ---------------------------------------- */
-
-type LookupState = { key: string; artist: string; active: Active };
 
 function ReleaseCover({ release, size }: { release: DiscographyRelease; size: number }) {
   return <Cover s={{ name: release.title, logo: release.cover, kind: "vod", genre: "Музыка", icon: "g:music" }} size={size} className="rounded-lg" fit="cover" />;
@@ -391,12 +349,12 @@ function DiscographyPanel({
   artist,
   online,
   lookups,
-  onLookup,
+  onSelect,
 }: {
   artist: string;
   online: boolean;
   lookups: Record<string, { count: number; limited: boolean }>;
-  onLookup: (release: DiscographyRelease, artistName: string) => void;
+  onSelect: (release: DiscographyRelease, artistName: string) => void;
 }) {
   const { status, data, error, cached, reload } = useDiscography(online ? artist : null);
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -506,9 +464,9 @@ function DiscographyPanel({
                         <li key={release.id}>
                           <button
                             type="button"
-                            onClick={() => onLookup(release, data?.artist ?? artist)}
+                            onClick={() => onSelect(release, data?.artist ?? artist)}
                             className="discography-release flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-surface-2"
-                            aria-label={`Найти в каталоге: ${release.title}`}
+                            aria-label={`Где слушать: ${release.title}`}
                           >
                             <ReleaseCover release={release} size={44} />
                             <span className="min-w-0 flex-1">
@@ -518,7 +476,7 @@ function DiscographyPanel({
                               </span>
                               {lookup && (
                                 <span className={cn("mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-semibold", lookup.count ? "bg-accent/10 text-accent" : "bg-surface-2 text-muted")}>
-                                  {lookup.count ? `В Internet Archive: ${lookup.count}${lookup.limited ? "+" : ""}` : "В Internet Archive не нашлось"}
+                                  {lookup.count ? `В открытых источниках: ${lookup.count}${lookup.limited ? "+" : ""}` : "В открытых источниках не нашлось"}
                                 </span>
                               )}
                             </span>
@@ -566,10 +524,9 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Album | null>(null);
   const [lookups, setLookups] = useState<Record<string, { count: number; limited: boolean }>>({});
-  const [returnTo, setReturnTo] = useState<LookupState | null>(null);
+  const [release, setRelease] = useState<{ release: DiscographyRelease; artist: string } | null>(null);
   const ctl = useRef<AbortController | null>(null);
   const retryPage = useRef(1);
-  const lookupKey = useRef<string | null>(null);
 
   const load = useCallback(async (a: Active, pg: number) => {
     ctl.current?.abort();
@@ -583,29 +540,26 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
       const selectedProvider = a.provider ?? "archive";
       if (selectedProvider !== "archive") {
         const options = { text: a.text ?? a.query, scope: a.scope ?? "artist", genre: a.genre, page: pg, signal: c.signal };
-        const result = selectedProvider === "openverse" ? await searchOpenverseTracks(options) : await searchCommonsTracks(options);
+        const result = selectedProvider === "audius"
+          ? await searchAudiusTracks({ text: a.text ?? a.query, page: pg, signal: c.signal })
+          : selectedProvider === "openverse"
+            ? await searchOpenverseTracks(options)
+            : await searchCommonsTracks(options);
         if (c.signal.aborted) return;
         setExternalTracks((prev) => pg === 1 ? result.tracks : [...prev, ...result.tracks.filter((track) => !prev.some((item) => item.id === track.id))]);
         setAlbums([]);
         setMore(result.hasMore);
       } else {
-        const result = a.exactQuery
-          ? await searchAlbums(a.exactQuery, pg, c.signal)
-          : a.genre
-            ? await searchAlbums(a.genre.query, pg, c.signal)
-            : a.text !== undefined && a.scope
-              ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
-              : await searchAlbums(a.query, pg, c.signal);
+        const result = a.genre
+          ? await searchAlbums(a.genre.query, pg, c.signal)
+          : a.text !== undefined && a.scope
+            ? await searchTextAlbums(a.text, a.scope, pg, c.signal)
+            : await searchAlbums(a.query, pg, c.signal);
         if (c.signal.aborted) return;
         setAlbums((prev) => (pg === 1 ? result.albums : [...prev, ...result.albums.filter((album) => !prev.some((item) => item.id === album.id))]));
         setExternalTracks([]);
         setMore(result.hasMore);
         setLimited(!!result.limited);
-        const pending = lookupKey.current;
-        if (pending && pg === 1) {
-          lookupKey.current = null;
-          setLookups((prev) => ({ ...prev, [pending]: { count: result.albums.length, limited: !!result.limited } }));
-        }
       }
       setPage(pg);
     } catch (e) {
@@ -642,30 +596,6 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
     }
   };
 
-  /** Релиз из дискографии: ищем его в каталоге Internet Archive и запоминаем результат. */
-  const lookupRelease = (release: DiscographyRelease, artistName: string) => {
-    const query = releaseLookupQuery(artistName, release.title);
-    if (!query) return;
-    const previous = active;
-    lookupKey.current = release.id;
-    if (previous) setReturnTo({ key: release.id, artist: artistName, active: previous });
-    // Режим поиска, выбранный пользователем, не трогаем: запрос релиза точный и без него.
-    setActive({
-      title: `«${release.title}» · ${artistName}`,
-      query,
-      exactQuery: query,
-      text: `${artistName} ${release.title}`,
-      scope: "all",
-      provider,
-    });
-  };
-
-  const backToDiscography = () => {
-    if (returnTo) setActive(returnTo.active);
-    setReturnTo(null);
-    lookupKey.current = null;
-  };
-
   const broadenSearch = () => {
     if (!active?.text) return;
     const genre = findArchiveGenre(active.text);
@@ -696,8 +626,6 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
     setText("");
     setScope("artist");
     closeActive(null);
-    setReturnTo(null);
-    lookupKey.current = null;
     setAlbums([]);
     setExternalTracks([]);
     setError(null);
@@ -712,8 +640,18 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
     onPlay(current, stations.map((station) => station.id), { kind: "collection", title: active?.title ?? track.providerName });
   };
 
+  const playReleaseTracks = (tracks: DiscoveredMusicTrack[], track: DiscoveredMusicTrack) => {
+    const stations = tracks.map((item) => itemToStation(item));
+    const current = stations.find((station) => station.id === itemStationId(track.id));
+    if (!current) return;
+    player.pin(stations);
+    onPlay(current, stations.map((station) => station.id), { kind: "collection", title: release ? `${release.artist} — ${release.release.title}` : track.providerName });
+  };
+
   const addDiscoveredTrack = (track: DiscoveredMusicTrack, downloadAfterAdd: boolean) => {
-    openPicker({ items: [track], suggest: track.title.slice(0, 70) || track.providerName, cover: track.logo, downloadAfterAdd });
+    const allowed = track.canDownload !== false;
+    if (downloadAfterAdd && !allowed) toast("Автор запретил скачивание этой записи — добавлено без офлайн-копии", "info");
+    openPicker({ items: [track], suggest: track.title.slice(0, 70) || track.providerName, cover: track.logo, downloadAfterAdd: downloadAfterAdd && allowed });
   };
 
   if (!online)
@@ -827,7 +765,7 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
         {search}
         <div className="music-source-heading">
           <p className="min-w-0 flex-1 text-sm leading-relaxed">
-            <b>{provider === "archive" ? "Песни и альбомы." : "Отдельные аудиотреки."}</b> {provider === "archive" ? "Ищите в коллекциях Internet Archive." : "Ищите по исполнителю, названию или жанру."} Офлайн-загрузка зависит от лицензии и доступа к файлу.
+            <b>{provider === "archive" ? "Песни и альбомы." : "Отдельные аудиотреки."}</b> {provider === "archive" ? "Ищите в коллекциях Internet Archive." : provider === "audius" ? "Полные треки из независимой сети Audius — без ключа и регистрации." : "Ищите по исполнителю, названию или жанру."} Офлайн-загрузка зависит от лицензии и доступа к файлу.
           </p>
           <select
             aria-label="Источник музыки"
@@ -836,6 +774,7 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
             className={cn(inputCls, "music-provider-select shrink-0 text-xs font-semibold")}
           >
             <option value="archive">Archive.org</option>
+            <option value="audius">Audius</option>
             <option value="openverse">Openverse</option>
             <option value="commons">Commons</option>
           </select>
@@ -844,6 +783,8 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
           <p className="flex items-start gap-2 mt-2"><ShieldAlert size={15} className="mt-0.5 shrink-0" />
           {provider === "archive"
             ? "Internet Archive — открытая библиотека: права на записи остаются у правообладателей. Сохраняйте только то, что вам разрешено."
+            : provider === "audius"
+              ? "Audius — независимая музыкальная сеть: каталог авторских и электронных релизов. Слушать можно всё, офлайн-копия доступна там, где автор разрешил скачивание."
             : provider === "openverse"
               ? "Openverse агрегирует музыку из Jamendo, Wikimedia Commons и Freesound. Проверяйте лицензию, атрибуцию и страницу оригинала перед использованием или скачиванием."
               : "Wikimedia Commons: условия лицензии и возможность скачивания различаются для каждого файла. Проверьте страницу оригинала."}
@@ -917,32 +858,22 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
             >
               <ArrowLeft size={17} /> <span className="hidden sm:inline">Коллекции</span>
             </button>
-            {returnTo && (
-              <button
-                type="button"
-                onClick={backToDiscography}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-accent/10 px-2.5 py-1.5 text-sm font-semibold text-accent transition hover:bg-accent/15"
-                aria-label={`Вернуться к дискографии: ${returnTo.artist}`}
-              >
-                <ArrowLeft size={15} /> Дискография
-              </button>
-            )}
             <h2 className="min-w-0 truncate font-display text-xl font-semibold tracking-tight">{active.title}</h2>
           <p role="status" aria-live="polite" className="music-results-count text-xs text-muted">
             {loading
-              ? provider === "archive" ? "Ищем и отсекаем аудиокниги…" : "Ищем аудиотреки…"
+              ? provider === "archive" ? "Ищем и отсекаем аудиокниги…" : provider === "audius" ? "Ищем полные треки в Audius…" : "Ищем аудиотреки…"
               : `Найдено ${provider === "archive" ? "релизов" : "треков"}: ${provider === "archive" ? albums.length : externalTracks.length}${more ? "+" : ""}`}
           </p>
           </div>
 
           {provider === "archive" && active.scope === "artist" && !!active.text && !active.genre && (
-            <DiscographyPanel artist={active.text} online={online} lookups={lookups} onLookup={lookupRelease} />
+            <DiscographyPanel artist={active.text} online={online} lookups={lookups} onSelect={(item, artistName) => setRelease({ release: item, artist: artistName })} />
           )}
 
           {limited && <p role="status" className="text-xs text-muted">Достигнут предел проверки большого каталога. Уточните название или исполнителя, чтобы найти остальные записи.</p>}
           {error && (
             <div className="flex items-center gap-3 rounded-xl bg-bad/10 p-4 text-sm text-bad">
-              <span className="flex-1">Не удалось связаться с {provider === "archive" ? "Internet Archive" : provider === "openverse" ? "Openverse" : "Wikimedia Commons"}: {error}</span>
+              <span className="flex-1">Не удалось связаться с {provider === "archive" ? "Internet Archive" : provider === "audius" ? "Audius" : provider === "openverse" ? "Openverse" : "Wikimedia Commons"}: {error}</span>
               <button className="shrink-0 font-semibold underline" onClick={() => void load(active, retryPage.current)}>
                 Повторить
               </button>
@@ -1007,6 +938,11 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
                         <p>В открытом каталоге не нашёл точных совпадений по исполнителю. Можно попробовать поиск по всем полям.</p>
                         <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={broadenSearch}>Искать везде</button>
                       </>
+                    ) : provider === "audius" ? (
+                      <>
+                        <p>В Audius ничего не нашлось. Это независимая сеть — крупных релизов там мало.</p>
+                        <button className="mt-2 font-semibold text-accent underline underline-offset-2" onClick={() => switchProvider("archive")}>Проверить Internet Archive</button>
+                      </>
                     ) : (
                       <p>Не нашлось треков по запросу «{active.text}». Попробуйте другие слова или переключите источник.</p>
                     )}
@@ -1025,11 +961,26 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
           )}
           {!loading && !error && active.scope === "artist" && !more && <details className="music-catalog-note text-xs leading-relaxed text-muted">
             <summary>Почему здесь не вся дискография?</summary><p>
-            {provider === "archive" ? "Это релизы из Archive.org, не полная дискография. В одном релизе может быть несколько песен; архивы RAR/ZIP нельзя включить напрямую." : "Это результаты открытого каталога, не полная дискография исполнителя. Можно переключить источник, сохранив запрос."}
+            {provider === "archive" ? "Это релизы из Archive.org, не полная дискография. В одном релизе может быть несколько песен; архивы RAR/ZIP нельзя включить напрямую." : provider === "audius" ? "Audius — независимый каталог: полные треки есть, но крупные лейблы там не представлены. Переключите источник, запрос сохранится." : "Это результаты открытого каталога, не полная дискография исполнителя. Можно переключить источник, сохранив запрос."}
           </p></details>}
         </>
       )}
 
+      {release && (
+        <ReleasePanel
+          artist={release.artist}
+          title={release.release.title}
+          year={release.release.date.slice(0, 4)}
+          releaseId={release.release.id}
+          cover={release.release.cover}
+          online={online}
+          onClose={() => setRelease(null)}
+          onOpenAlbum={(album) => setOpen(album)}
+          onPlayTracks={playReleaseTracks}
+          onAddTrack={addDiscoveredTrack}
+          onArchiveCount={(count) => setLookups((prev) => ({ ...prev, [release.release.id]: { count, limited: false } }))}
+        />
+      )}
       {open && <AlbumPanel album={open} onClose={() => setOpen(null)} onPlay={onPlay} />}
     </div>
   );

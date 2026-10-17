@@ -1,7 +1,7 @@
 import type { PlaylistItem } from "./types";
 import type { AlbumSearchScope, ArchiveGenre } from "./archive";
 
-export type DiscoveredMusicProvider = "openverse" | "commons";
+export type DiscoveredMusicProvider = "openverse" | "commons" | "audius";
 
 /** A direct-play audio result with its original source and license kept for attribution. */
 export interface DiscoveredMusicTrack extends PlaylistItem {
@@ -13,6 +13,8 @@ export interface DiscoveredMusicTrack extends PlaylistItem {
   landingUrl: string;
   attribution: string;
   filetype: string;
+  /** false — автор источника запретил скачивание; слушать можно, офлайн-копию делать нельзя. */
+  canDownload?: boolean;
 }
 
 export interface DiscoveredMusicPage {

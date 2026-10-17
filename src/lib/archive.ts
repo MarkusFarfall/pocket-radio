@@ -22,6 +22,8 @@ export interface Album {
   /** Заполняется после быстрой проверки metadata: 1 = одиночная запись, >1 = сборник. */
   trackCount?: number;
   cover?: string;
+  /** true — исполнитель и название совпали с запросом релиза, а не просто «похоже». */
+  exact?: boolean;
 }
 
 export type AlbumSearchMatch = "artist" | "title" | "subject";
@@ -227,14 +229,6 @@ export function textQuery(text: string, scope: AlbumSearchScope = "artist"): str
   return phraseQuery(variants, scope === "artist" ? ["creator", "title"] : ["creator", "title", "subject"]);
 }
 
-/** Запрос конкретного релиза: исполнитель и название проверяются отдельно, а не одной фразой. */
-export function releaseLookupQuery(artist: string, title: string): string {
-  const artistVariants = searchVariants(artist);
-  const titleVariants = searchVariants(title).filter((variant) => variant.length > 1);
-  if (!artistVariants.length || !titleVariants.length) return "";
-  return `(${phraseQuery(artistVariants, ["creator", "title", "subject"])} AND ${phraseQuery(titleVariants, ["title", "subject"])})`;
-}
-
 interface Doc {
   identifier: string;
   title?: string | string[];
@@ -274,6 +268,165 @@ async function requestAlbumDocs(query: string, page: number, rows: number, signa
   const j = (await r.json()) as { response?: { docs?: Doc[]; numFound?: number } };
   const docs = j.response?.docs ?? [];
   return { docs, total: Number(j.response?.numFound) || docs.length };
+}
+
+/* --------------------------------------- поиск конкретного релиза --------------------------------------- */
+
+const RELEASE_STOPWORDS = new Set([
+  "the", "a", "an", "and", "of", "de", "la", "le", "el", "los", "las", "del", "и", "в", "на", "с", "для", "от", "из",
+  "deluxe", "edition", "expanded", "remaster", "remastered", "special", "version", "bonus", "track", "album", "ep", "single",
+]);
+
+function releaseTokens(value: string): string[] {
+  return normalizeSearchText(value)
+    .split(" ")
+    .filter((token) => token.length > 1 && !RELEASE_STOPWORDS.has(token));
+}
+
+function titleWithoutDecorations(title: string): string {
+  return title
+    .replace(/\((?:[^()]*)\)/g, " ")
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\s[-–—]\s*(?:deluxe|expanded|remaster(?:ed)?|special|anniversary|edition).*$/i, " ")
+    .replace(/[\s\u00a0]+/g, " ")
+    .trim();
+}
+
+function tokenScore(haystack: string, tokens: string[]): number {
+  if (!tokens.length) return 0;
+  const normalized = ` ${haystack} `;
+  return tokens.filter((token) => normalized.includes(token)).length / tokens.length;
+}
+
+interface ScoredRelease {
+  album: Album;
+  score: number;
+  exact: boolean;
+  downloads: number;
+}
+
+/**
+ * Релиз из дискографии ищется не одной фразой, а набором способов:
+ * точное имя исполнителя + название, название без скобок и пометок о переиздании,
+ * транслитерация, токены названия. Совпадения ранжируются по пересечению слов и
+ * проверяются по metadata, поэтому случайные записи со словом «Спасибо» больше не лезут в выдачу.
+ */
+export async function searchRelease(artist: string, title: string, signal?: AbortSignal): Promise<{
+  albums: Album[];
+  exact: number;
+  limited: boolean;
+}> {
+  const artistVariants = searchVariants(artist);
+  const plainTitle = titleWithoutDecorations(title) || title;
+  const titleVariants = [...new Set([title, plainTitle, ...searchVariants(plainTitle)])].filter(Boolean);
+  const titleTokens = releaseTokens(plainTitle).slice(0, 6);
+  const artistTokens = releaseTokens(artist).slice(0, 6);
+  if (!artistVariants.length || !titleVariants.length) return { albums: [], exact: 0, limited: false };
+
+  const titleAlternatives = [
+    ...titleVariants.map((variant) => `title:"${variant}"`),
+    titleTokens.length > 1 ? `title:(${titleTokens.join(" AND ")})` : "",
+    ...titleVariants.map((variant) => `subject:"${variant}"`),
+  ].filter(Boolean);
+  const artistAlternatives = [
+    ...artistVariants.map((variant) => `creator:"${variant}"`),
+    ...artistVariants.map((variant) => `subject:"${variant}"`),
+    ...artistVariants.map((variant) => `title:"${variant}"`),
+    artistTokens.length > 1 ? `creator:(${artistTokens.join(" AND ")})` : "",
+  ].filter(Boolean);
+
+  const query = `(${artistAlternatives.join(" OR ")}) AND (${titleAlternatives.join(" OR ")})`;
+  const result = await requestAlbumDocs(query, 1, SEARCH_BATCH_SIZE, signal);
+
+  const scored: ScoredRelease[] = [];
+  const seen = new Set<string>();
+  for (const doc of result.docs) {
+    if (isSpokenWordArchiveItem(doc)) continue;
+    const titleHay = `${one(doc.title)} ${one(doc.subject)}`;
+    const artistHay = `${one(doc.creator)} ${one(doc.artist)} ${one(doc.subject)} ${doc.identifier}`;
+    const titleScore = tokenScore(normalizeSearchText(titleHay), titleTokens);
+    const phraseScore = titleVariants.some((variant) => normalizeSearchText(titleHay).includes(normalizeSearchText(variant))) ? 1 : 0;
+    const artistScore = tokenScore(normalizeSearchText(artistHay), artistTokens);
+    const declaredCreator = one(doc.creator).trim() || one(doc.artist).trim();
+    // Название совпало, но указан другой автор — это чужой релиз, а не наш.
+    if (!artistScore && declaredCreator) continue;
+    if (!artistScore && (titleScore < 0.9 && !phraseScore)) continue;
+    if (titleScore < 0.5 && !phraseScore) continue;
+    const year = Number(doc.year) || 0;
+    const score = 0.55 * Math.max(titleScore, phraseScore * 0.9) + 0.35 * Math.min(1, artistScore) + (year ? 0.05 : 0) + 0.05 * (phraseScore ? 1 : 0);
+    const exact = (titleScore >= 0.8 || phraseScore === 1) && artistScore >= 0.5;
+    seen.add(doc.identifier);
+    scored.push({ album: toAlbum(doc, exact ? "artist" : "title"), score, exact, downloads: Number(doc.downloads) || 0 });
+  }
+
+  scored.sort((a, b) => Number(b.exact) - Number(a.exact) || b.score - a.score || b.downloads - a.downloads);
+
+  // Archive часто подписывает концерт именем исполнителя, а название альбома хранит
+  // только в metadata (поле album). Проверяем такие записи отдельно — иначе «Live»
+  // выглядит как «ничего не найдено», хотя релиз лежит в архиве.
+  const artistOnly = await requestAlbumDocs(`(${artistAlternatives.join(" OR ")})`, 1, SEARCH_BATCH_SIZE, signal);
+  const candidates = artistOnly.docs.filter((doc) => !seen.has(doc.identifier)).slice(0, 8);
+  await Promise.all(
+    candidates.map(async (doc) => {
+      try {
+        const meta = await metadata(doc.identifier, signal);
+        const metaTitle = `${meta.title} ${meta.album ?? ""} ${meta.creator}`;
+        const titleScore = tokenScore(normalizeSearchText(metaTitle), titleTokens);
+        const phrase = titleVariants.some((variant) => normalizeSearchText(metaTitle).includes(normalizeSearchText(variant)));
+        const artistScore = tokenScore(normalizeSearchText(metaTitle), artistTokens);
+        if ((titleScore < 0.8 && !phrase) || artistScore < 0.5) return;
+        const albumTitle = fixText(meta.album || meta.title);
+        const artistName = fixText(meta.creator) || fixText(artist);
+        seen.add(doc.identifier);
+        scored.push({
+          album: {
+            ...toAlbum(doc, "artist"),
+            title: albumTitle,
+            creator: artistName,
+            exact: true,
+          },
+          score: 0.9 + 0.05 * titleScore,
+          exact: true,
+          downloads: Number(doc.downloads) || 0,
+        });
+      } catch {
+        /* сбой metadata не должен ломать остальные результаты */
+      }
+    })
+  );
+
+  // metadata подтверждает исполнителя там, где поле creator пустое (саморелизы, концерты).
+  const unverified = scored.filter((item) => !item.album.creator).slice(0, 2);
+  await Promise.all(
+    unverified.map(async (item) => {
+      try {
+        const meta = await metadata(item.album.id, signal);
+        const artistHay = normalizeSearchText(`${meta.creator} ${meta.title} ${meta.album ?? ""}`);
+        const artistScore = tokenScore(artistHay, artistTokens);
+        if (meta.creator) item.album.creator = meta.creator;
+        if (artistScore >= 0.5) {
+          item.album.exact = item.album.exact || tokenScore(normalizeSearchText(titleHayOf(meta.title, meta.album)), titleTokens) >= 0.5;
+          item.score += 0.1;
+        }
+      } catch {
+        /* проверка не должна скрывать уже найденное */
+      }
+    })
+  );
+
+  const albums = scored
+    .sort((a, b) => Number(b.exact) - Number(a.exact) || b.score - a.score || b.downloads - a.downloads)
+    .map((item) => ({ ...item.album, exact: item.exact }));
+
+  return {
+    albums,
+    exact: albums.filter((album) => album.exact).length,
+    limited: result.docs.length >= SEARCH_BATCH_SIZE,
+  };
+}
+
+function titleHayOf(album: string | undefined, albumField: string | undefined): string {
+  return `${album ?? ""} ${albumField ?? ""}`;
 }
 
 export async function searchAlbums(query: string, page: number, signal?: AbortSignal): Promise<AlbumSearchPage> {
