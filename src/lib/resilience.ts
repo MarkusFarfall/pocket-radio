@@ -8,6 +8,8 @@ import { isLanUrl } from "./templates";
 import { toast } from "./toast";
 import { listPlaylists, playableOffline, playPlaylist } from "./playlists";
 import type { FallbackInfo, Playlist, Station } from "./types";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 /**
  * Поведение приложения при потере интернета.
@@ -82,7 +84,10 @@ export function useRecoveryOffer(): RecoveryOffer | null {
   );
 }
 
+export const getResilienceSettings = (): ResilienceSettings => ({ ...settings });
+
 export function setResilience(patch: Partial<ResilienceSettings>) {
+  markSyncKey(prefDocKey("resilience"));
   settings = { ...settings, ...patch };
   try {
     localStorage.setItem(KEY, JSON.stringify(settings));

@@ -1,3 +1,5 @@
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 export const EQUALIZER_STORAGE_KEY = "radio.equalizer.v1";
 export const EQUALIZER_BANDS = [
   { hz: 31, label: "31" },
@@ -142,6 +144,7 @@ export function loadEqualizerSettings(): EqualizerSettings {
 }
 
 export function saveEqualizerSettings(settings: EqualizerSettings): void {
+  markSyncKey(prefDocKey("equalizer"));
   try {
     localStorage.setItem(EQUALIZER_STORAGE_KEY, JSON.stringify(normalizeEqualizerSettings(settings)));
   } catch {

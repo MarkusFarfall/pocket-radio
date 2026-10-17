@@ -12,6 +12,8 @@ import { isLanUrl, uid } from "./templates";
 import { toast } from "./toast";
 import type { FallbackInfo, Playlist, PlaylistFollow, PlaylistItem, Station } from "./types";
 import { snapshotImage } from "./images";
+import { markSyncKey } from "./syncBus";
+import { playlistDocKey } from "./syncKeys";
 import { artworkUrl, isPlaceholderArtwork } from "./artwork";
 import { fixText } from "./text";
 
@@ -207,6 +209,7 @@ export async function deletePlaylist(id: string): Promise<Playlist | undefined> 
   const p = await getPlaylist(id);
   if (!p) return undefined;
   await db.settings.delete(PL + id);
+  markSyncKey(playlistDocKey(id));
   // Оставляем время на «Отменить»; общие с другими плейлистами загрузки GC сохранит.
   setTimeout(() => void gcUnusedPlaylistAudio(p.items), 9000);
   return p;
@@ -214,6 +217,7 @@ export async function deletePlaylist(id: string): Promise<Playlist | undefined> 
 
 export async function restorePlaylist(p: Playlist): Promise<void> {
   await save(p);
+  markSyncKey(playlistDocKey(p.id));
 }
 
 /** Удаляет из кэша аудио всех треков «pli:», которые больше не используются ни одним плейлистом. */

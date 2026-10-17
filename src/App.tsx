@@ -16,6 +16,7 @@ import { useHotkeys } from "./lib/useHotkeys";
 import { gotoPlaylist } from "./lib/picker";
 import { useFileDrop } from "./lib/useFileDrop";
 import { useAuth } from "./lib/auth/AuthContext";
+import { startSync, syncAvailable } from "./lib/sync";
 import { cn } from "./utils/cn";
 import { Modal, Toasts } from "./components/ui";
 import { DockPlayer, FullPlayer, MiniPlayer } from "./components/PlayerUI";
@@ -117,6 +118,13 @@ export default function App() {
   useEffect(() => {
     if (loaded) void reconcileOfflineCache();
   }, [auth.scope, loaded]);
+
+  // Полная синхронизация аккаунта: станции, плейлисты с обложками, прогресс, статистика,
+  // оформление и скачанное аудио. Движок сам решает, что и когда отправить.
+  useEffect(() => {
+    if (!syncAvailable() || !auth.user) return;
+    return startSync(auth.user.id);
+  }, [auth.user?.id, auth.scope]);
 
   const openAdd = useCallback(() => {
     setEditing(null);

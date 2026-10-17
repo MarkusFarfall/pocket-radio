@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 /**
  * Стиль интерфейса — не про цвета (они в themes.ts), а про форму и характер:
@@ -159,6 +161,7 @@ export function applyUi() {
 }
 
 export function setUiPrefs(patch: Partial<UiPrefs>) {
+  markSyncKey(prefDocKey("ui"));
   prefs = normalizeUiPrefs({ ...prefs, ...patch });
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));

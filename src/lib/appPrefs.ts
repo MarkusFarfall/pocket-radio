@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { player } from "./player";
 import type { Tab } from "../views/shared";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 /** Небольшие пользовательские настройки приложения. */
 
@@ -32,6 +34,7 @@ const listeners = new Set<() => void>();
 export const getAppPrefs = () => prefs;
 
 export function setAppPrefs(patch: Partial<AppPrefs>) {
+  markSyncKey(prefDocKey("app"));
   prefs = { ...prefs, ...patch };
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));

@@ -1,17 +1,12 @@
-import { useEffect, useState } from "react";
-import { Cloud, CloudDownload, CloudUpload, Loader2, LogOut } from "lucide-react";
+import { Cloud, LogOut } from "lucide-react";
 import { Avatar } from "../../components/AccountUI";
 import { btnGhost, btnPrimary } from "../../components/ui";
 import { useAuth } from "../../lib/auth/AuthContext";
-import { lastSyncAt, pullFromCloud, pushToCloud } from "../../lib/sync";
-import { toast } from "../../lib/toast";
 import { Group, Row } from "./parts";
+import { CloudSync } from "./CloudSync";
 
-export function Profile({ online, onAccount }: { online: boolean; onAccount: () => void }) {
+export function Profile({ onAccount }: { onAccount: () => void }) {
   const auth = useAuth();
-  const [busy, setBusy] = useState<"push" | "pull" | null>(null);
-  const [syncedAt, setSyncedAt] = useState<number | null>(() => lastSyncAt(auth.user?.id ?? null));
-  useEffect(() => setSyncedAt(lastSyncAt(auth.user?.id ?? null)), [auth.user?.id]);
   const code = (t: string) => <code className="font-mono">{t}</code>;
 
   return (
@@ -56,54 +51,7 @@ export function Profile({ online, onAccount }: { online: boolean; onAccount: () 
             <Cloud size={22} className="shrink-0 text-muted" />
           </Row>
         ) : (
-          <Row
-            title="Облачный обмен (вручную)"
-            desc={
-              syncedAt
-                ? `Последний обмен: ${new Date(syncedAt).toLocaleString("ru", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}. Загрузка объединяет записи; удаления и сами офлайн-аудиофайлы между устройствами не переносятся.`
-                : "Если в облаке уже есть копия, сначала загрузите её на устройство. Обмен объединяет записи, но не переносит удаления и сами офлайн-аудиофайлы."
-            }
-            stack
-          >
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={btnGhost}
-                disabled={!online || busy !== null}
-                onClick={async () => {
-                  setBusy("push");
-                  try {
-                    await pushToCloud();
-                    setSyncedAt(lastSyncAt(auth.user?.id ?? null));
-                    toast("Данные отправлены в облако", "ok");
-                  } catch (e) {
-                    toast(e instanceof Error ? e.message : "Не удалось отправить", "error");
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-              >
-                {busy === "push" ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />} В облако
-              </button>
-              <button
-                className={btnGhost}
-                disabled={!online || busy !== null}
-                onClick={async () => {
-                  setBusy("pull");
-                  try {
-                    const r = await pullFromCloud();
-                    setSyncedAt(lastSyncAt(auth.user?.id ?? null));
-                    toast(r ? `Загружено — станций: ${r.added}, сессий: ${r.sessions}, событий: ${r.events}, треков: ${r.tracks}, плейлистов: ${r.playlists}` : "В облаке пока нет данных", r ? "ok" : "info");
-                  } catch (e) {
-                    toast(e instanceof Error ? e.message : "Не удалось загрузить", "error");
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-              >
-                {busy === "pull" ? <Loader2 size={16} className="animate-spin" /> : <CloudDownload size={16} />} Из облака
-              </button>
-            </div>
-          </Row>
+          <CloudSync user={auth.user} />
         )}
       </Group>
     </>

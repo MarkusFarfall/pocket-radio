@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 export type PlayerLayout = "focus" | "vinyl" | "compact";
 export type PlayerMotion = "calm" | "vinyl" | "signal" | "aurora" | "none";
@@ -76,6 +78,7 @@ export function applyPlayerTemplate(id: PlayerSkin) {
 }
 
 export function setPlayerAppearance(patch: Partial<PlayerAppearance>) {
+  markSyncKey(prefDocKey("player"));
   prefs = normalizePlayerAppearance({ ...prefs, ...patch });
   try { localStorage.setItem(KEY, JSON.stringify(prefs)); }
   catch { /* device storage can be disabled */ }

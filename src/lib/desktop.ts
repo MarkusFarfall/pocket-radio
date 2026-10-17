@@ -1,4 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 /** Настройки компоновки для компьютера. */
 
@@ -38,6 +40,7 @@ const listeners = new Set<() => void>();
 export const getDesktopPrefs = () => prefs;
 
 export function setDesktopPrefs(patch: Partial<DesktopPrefs>) {
+  markSyncKey(prefDocKey("desktop"));
   prefs = { ...prefs, ...patch };
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));

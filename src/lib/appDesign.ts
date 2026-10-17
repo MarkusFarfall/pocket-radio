@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import { DEFAULT_UI, getUiPrefs, normalizeUiPrefs, setUiPrefs, type UiPrefs } from "./uiStyle";
 import { getThemePrefs, PALETTES, setThemePrefs, type ThemePrefs } from "./themes";
 import { applyPlayerTemplate, getPlayerAppearance, normalizePlayerAppearance, setPlayerAppearance, type PlayerAppearance } from "./playerAppearance";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 export type PremiumDesign = "panorama" | "focus" | "atelier" | "nocturne";
 export type AppDesign = "classic" | "editorial" | "library" | "console" | PremiumDesign;
@@ -44,6 +46,7 @@ function publish() {
   listeners.forEach(f => f());
 }
 export function applyAppDesign(value: AppDesign) {
+  markSyncKey(prefDocKey("design"));
   const id = normalizeAppDesign(value);
   const template = APP_DESIGNS.find(x => x.id === id)!;
   if (current === "classic" && id !== "classic") {
@@ -68,6 +71,7 @@ export function applyAppDesign(value: AppDesign) {
 }
 /** Used by Device's explicit full appearance reset; does not restore a previous theme. */
 export function resetAppDesign() {
+  markSyncKey(prefDocKey("design"));
   current = "classic"; previous = null;
   try { localStorage.removeItem(KEY); localStorage.removeItem(BACKUP); } catch { /* ignore */ }
   publish();

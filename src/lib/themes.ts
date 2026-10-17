@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from "react";
+import { markSyncKey } from "./syncBus";
+import { prefDocKey } from "./syncKeys";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type VarKey = "bg" | "surface" | "surface-2" | "line" | "ink" | "muted" | "accent" | "accent-ink" | "ok" | "bad";
@@ -140,6 +142,7 @@ export function applyTheme() {
 }
 
 export function setThemePrefs(patch: Partial<ThemePrefs>) {
+  markSyncKey(prefDocKey("theme"));
   prefs = { ...prefs, ...patch };
   try {
     localStorage.setItem(K.mode, prefs.mode);

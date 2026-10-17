@@ -1,6 +1,8 @@
 import { activeDbName, db } from "./db";
 import type { OfflineItem, Station } from "./types";
 import { fetchCddaWav, parseCddaTrackUrl } from "./cdda";
+import { markSyncKey } from "./syncBus";
+import { audioDocKey } from "./syncKeys";
 
 const CACHE = "radio-audio-v1";
 // Cache.put and the IndexedDB index are separate transactions. Reconciliation must
@@ -182,6 +184,7 @@ export async function putOfflineBlob(stationId: string, url: string, body: BodyI
     await cache.put(audioCacheKeyFor(scope, stationId), new Response(body, { headers: { "Content-Type": type, "Content-Length": String(size) } }));
     assertScope(scope);
     await db.offline.put({ stationId, size, ts: Date.now() });
+    markSyncKey(audioDocKey(stationId));
     void url;
   });
 }
@@ -247,6 +250,7 @@ async function saveVod(station: Station, onProgress: (loaded: number, total: num
   }
   assertScope(scope);
   await db.offline.put({ stationId: station.id, size, ts: Date.now() });
+  markSyncKey(audioDocKey(station.id));
   return size;
 }
 
@@ -258,6 +262,7 @@ export async function removeVod(station: Pick<Station, "id" | "url">) {
     if (station.url) await cache.delete(station.url);
   }
   await db.offline.delete(station.id);
+  markSyncKey(audioDocKey(station.id));
 }
 
 export async function cachedBlobUrl(station: Station): Promise<string | null> {

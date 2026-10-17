@@ -6,6 +6,8 @@ import type { FallbackInfo, Playlist, Session, Station } from "./types";
 import { ambient } from "./ambient";
 import { fixText } from "./text";
 import { cachedBlobUrl } from "./offline";
+import { markSyncKey } from "./syncBus";
+import { eventDocKey, eventFingerprint, sessionDocKey, stationDocKey, prefDocKey } from "./syncKeys";
 import { fetchCddaWav, parseCddaTrackUrl } from "./cdda";
 import { connectivity } from "./connectivity";
 import { isLanUrl, mixedContentRisk, uid } from "./templates";
@@ -780,6 +782,7 @@ class Engine {
 
   setDataSaver(v: boolean) {
     localStorage.setItem("radio.dataSaver", v ? "1" : "0");
+    markSyncKey(prefDocKey("app"));
     this.set({ dataSaver: v });
     if (this.hls) {
       this.hls.autoLevelCapping = v ? 0 : -1;
@@ -1243,6 +1246,7 @@ class Engine {
     const st = this.state.station;
     if (st) {
       void db.stations.update(st.id, { resumePos: 0, resumeUpdatedAt: Date.now() });
+      if (!st.id.startsWith("pli:")) markSyncKey(stationDocKey(st.syncId ?? st.id));
       this.progressSink?.(st, 0);
     }
     this.set({ status: "paused" });
@@ -1259,6 +1263,7 @@ class Engine {
     if (!this.state.isLive && st && Date.now() - this.lastResumeSave > 5000 && a.currentTime > 1) {
       this.lastResumeSave = Date.now();
       void db.stations.update(st.id, { resumePos: Math.floor(a.currentTime), resumeUpdatedAt: Date.now() });
+      if (!st.id.startsWith("pli:")) markSyncKey(stationDocKey(st.syncId ?? st.id));
       this.progressSink?.(st, a.currentTime);
       if ("mediaSession" in navigator && dur) {
         try {
@@ -1296,7 +1301,9 @@ class Engine {
   private logEvent(type: "error" | "buffer", message?: string, ms?: number) {
     const st = this.state.station;
     if (!st) return;
-    void db.events.add({ stationId: st.id, stationName: st.name, type, ts: Date.now(), message, ms });
+    const ts = Date.now();
+    void db.events.add({ stationId: st.id, stationName: st.name, type, ts, message, ms });
+    markSyncKey(eventDocKey(eventFingerprint({ stationId: st.id, type, ts, ms, message })));
   }
 
   flush(final: boolean): Promise<unknown> {
@@ -1327,10 +1334,13 @@ class Engine {
       try {
         if (t.id === undefined) t.id = await db.sessions.add(rec);
         else await db.sessions.update(t.id, { endedAt: rec.endedAt, seconds: rec.seconds });
+        markSyncKey(sessionDocKey(t.syncId));
         if (delta > 0)
           await db.stations.where("id").equals(t.stationId).modify((s) => {
             s.totalSeconds = (s.totalSeconds || 0) + delta / 1000;
           });
+        // Треки плейлистов не станции каталога: у них свои документы прогресса.
+        if (!t.stationId.startsWith("pli:")) markSyncKey(stationDocKey(t.stationId));
       } catch {
         /* БД недоступна */
       }

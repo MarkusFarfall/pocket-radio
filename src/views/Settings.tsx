@@ -34,6 +34,9 @@ const E = (section: Section, title: string, keys = "", sub?: Sub): Entry => ({ s
 const INDEX: Entry[] = [
   E("profile", "Аккаунт", "профиль имя логин войти выйти гость аватар пароль"),
   E("profile", "Облако", "синхронизация supabase сервер облачный устройства"),
+  E("profile", "Полная синхронизация", "аккаунт устройства другой компьютер плейлисты обложки история оформление перенос"),
+  E("profile", "Скачанное аудио", "офлайн музыка storage файлы перенос устройства"),
+  E("profile", "Подготовить сервер", "supabase sync_docs user-media sql схема storage"),
   E("appearance", "Светлая или тёмная", "тема режим ночной тёмная светлая системная", "colors"),
   E("appearance", "Палитры и цвета", "палитра акцент цвет оттенок тема", "colors"),
   E("appearance", "Интерфейсы приложения", "глобальный стиль дизайн редакция медиатека пульт шаблоны", "style"),
@@ -239,7 +242,7 @@ export function Settings({ stations, online, onAccount }: { stations: Station[];
               {cur.label}
             </h2>
             <div key={nonce}>
-              {active === "profile" && <Profile online={online} onAccount={onAccount} />}
+              {active === "profile" && <Profile onAccount={onAccount} />}
               {active === "appearance" && <Appearance />}
               {active === "playback" && <Playback />}
               {active === "offline" && <OfflineSection />}

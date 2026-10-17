@@ -3,10 +3,24 @@ import type { Draft, OfflineItem, PlayEvent, Playlist, PlaylistItem, SavedTrack,
 import { TEMPLATES, guessKind, normalizeUrl, uid, validUrl } from "./templates";
 import { fixText } from "./text";
 import { artworkUrl, isPlaceholderArtwork } from "./artwork";
+import { markSyncAll, markSyncKey, markSyncKeys } from "./syncBus";
+import { audioDocKey, eventFingerprint, playlistDocKey, progressDocKey, stationDocKey, trackDocKey } from "./syncKeys";
 
 export interface Setting {
   key: string;
   value: unknown;
+}
+
+/**
+ * Локальный журнал синхронизации: какой документ в каком виде уже лежит в облаке.
+ * hash — отпечаток последней синхронизированной версии, deleted — «надгробие».
+ */
+export interface SyncMeta {
+  key: string;
+  hash: string;
+  deleted?: 0 | 1;
+  /** серверное время последнего подтверждения, мс */
+  at?: number;
 }
 
 class RadioDB extends Dexie {
@@ -16,6 +30,7 @@ class RadioDB extends Dexie {
   settings!: Table<Setting, string>;
   offline!: Table<OfflineItem, string>;
   tracks!: Table<SavedTrack, number>;
+  syncMeta!: Table<SyncMeta, string>;
 
   constructor(name: string) {
     super(name);
@@ -33,6 +48,15 @@ class RadioDB extends Dexie {
       settings: "key",
       offline: "stationId",
       tracks: "++id, ts, stationId",
+    });
+    this.version(3).stores({
+      stations: "id, createdAt, lastPlayedAt, kind, genre, syncId",
+      sessions: "++id, stationId, startedAt, syncId",
+      events: "++id, stationId, ts, type",
+      settings: "key",
+      offline: "stationId",
+      tracks: "++id, ts, stationId",
+      syncMeta: "key, at",
     });
   }
 }
@@ -114,6 +138,7 @@ export async function copyGuestIntoCurrent(): Promise<number> {
     } catch {
       /* Cache API недоступен — метаданные всё равно перенесены */
     }
+    markSyncAll();
     return stations.length;
   } finally {
     g.close();
@@ -125,6 +150,8 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   return r ? (r.value as T) : fallback;
 }
 export function setSetting(key: string, value: unknown) {
+  if (key.startsWith("pl:")) markSyncKey(playlistDocKey(key.slice(3)));
+  else if (key.startsWith("pp:")) markSyncKey(progressDocKey(key));
   return db.settings.put({ key, value });
 }
 
@@ -179,6 +206,7 @@ export async function saveStation(d: Draft, existing?: Station): Promise<Station
     delete s.resumeUpdatedAt;
   }
   await db.stations.put(s);
+  markSyncKey(stationDocKey(s.syncId ?? s.id));
   return s;
 }
 
@@ -202,6 +230,7 @@ export async function addMany(drafts: Draft[], demo = false): Promise<number> {
     list.push(s);
   }
   if (list.length) await db.stations.bulkAdd(list);
+  markSyncKeys(list.map((s) => stationDocKey(s.syncId ?? s.id)));
   return list.length;
 }
 
@@ -215,10 +244,13 @@ export async function removeByUrl(url: string): Promise<Station | undefined> {
 
 export async function restoreStation(s: Station) {
   await db.stations.put(s);
+  markSyncKey(stationDocKey(s.syncId ?? s.id));
 }
 
-export function toggleFavorite(s: Station) {
-  return db.stations.update(s.id, { favorite: !s.favorite, updatedAt: Date.now(), syncId: s.syncId ?? s.id });
+export async function toggleFavorite(s: Station) {
+  const changed = await db.stations.update(s.id, { favorite: !s.favorite, updatedAt: Date.now(), syncId: s.syncId ?? s.id });
+  markSyncKey(stationDocKey(s.syncId ?? s.id));
+  return changed;
 }
 
 /** Работает и для станций, которых ещё нет в каталоге (предпросмотр из «Обзора»). */
@@ -226,10 +258,12 @@ export async function toggleFavoriteAny(s: Station) {
   const ex = (await db.stations.get(s.id)) ?? (await db.stations.filter((x) => x.url === s.url).first());
   if (ex) {
     await db.stations.update(ex.id, { favorite: !ex.favorite, updatedAt: Date.now(), syncId: ex.syncId ?? ex.id });
+    markSyncKey(stationDocKey(ex.syncId ?? ex.id));
     return !ex.favorite;
   }
   const now = Date.now();
   await db.stations.put({ ...s, syncId: s.syncId ?? s.id, favorite: true, createdAt: now, updatedAt: now });
+  markSyncKey(stationDocKey(s.syncId ?? s.id));
   return true;
 }
 
@@ -240,6 +274,7 @@ export async function saveToLibrary(s: Station) {
   if (dup) return false;
   const now = Date.now();
   await db.stations.put({ ...s, createdAt: now, updatedAt: now });
+  markSyncKey(stationDocKey(s.syncId ?? s.id));
   return true;
 }
 
@@ -249,6 +284,7 @@ export async function deleteStation(id: string) {
 
 export async function deleteStations(ids: string[]) {
   const doomed = (await db.stations.bulkGet(ids)).filter((s): s is Station => !!s);
+  markSyncKeys(doomed.flatMap((s) => [stationDocKey(s.syncId ?? s.id), audioDocKey(s.id)]));
   const cached = new Set((await db.offline.bulkGet(ids)).filter((o) => !!o).map((o) => o!.stationId));
   await db.transaction("rw", [db.stations, db.offline], async () => {
     await db.stations.bulkDelete(ids);
@@ -268,6 +304,8 @@ export async function deleteStations(ids: string[]) {
 }
 
 export async function clearHistory() {
+  // Удаление истории уносит и удалённые записи из облака: полная сверка разошлёт надгробия.
+  markSyncAll();
   await db.transaction("rw", [db.sessions, db.events, db.stations, db.settings], async () => {
     await db.sessions.clear();
     await db.events.clear();
@@ -291,14 +329,19 @@ export async function saveTrack(t: Omit<SavedTrack, "id" | "ts">): Promise<boole
     .first();
   if (dup) {
     if (!dup.logo && logo && dup.id !== undefined) await db.tracks.update(dup.id, { logo });
+    markSyncKey(trackDocKey(t.title, t.artist));
     return false;
   }
   await db.tracks.add({ ...t, logo, ts: Date.now() });
+  markSyncKey(trackDocKey(t.title, t.artist));
   return true;
 }
 
-export function removeTrack(id: number) {
-  return db.tracks.delete(id);
+export async function removeTrack(id: number) {
+  const track = await db.tracks.get(id);
+  const removed = await db.tracks.delete(id);
+  if (track) markSyncKey(trackDocKey(track.title, track.artist));
+  return removed;
 }
 
 export function trackLabel(t: Pick<SavedTrack, "title" | "artist">) {
@@ -327,6 +370,11 @@ export async function exportJSON(withStats: boolean): Promise<string> {
 export interface ImportJSONOptions {
   /** Для облачных снимков применять записи с более новым updatedAt к существующим. */
   updateExisting?: boolean;
+  /**
+   * Заменять список треков плейлиста целиком, когда облачная версия новее.
+   * Обычный импорт файла объединяет треки, чтобы ничего не потерять.
+   */
+  replacePlaylists?: boolean;
 }
 
 export interface ImportJSONResult {
@@ -354,9 +402,7 @@ function sessionFingerprint(s: Pick<Session, "stationId" | "startedAt" | "endedA
   return s.syncId ? `sync:${s.syncId}` : `legacy:${JSON.stringify([s.stationId, s.startedAt, s.endedAt, s.seconds])}`;
 }
 
-function eventFingerprint(e: Pick<PlayEvent, "stationId" | "type" | "ts" | "ms" | "message">): string {
-  return JSON.stringify([e.stationId, e.type, e.ts, e.ms ?? null, e.message ?? ""]);
-}
+// Дедупликация событий использует общий отпечаток из syncKeys: он же становится ключом облачного документа.
 
 function progressTimestamp(value: unknown): number {
   if (isRecord(value) && finiteNumber(value.updatedAt)) return value.updatedAt;
@@ -440,6 +486,7 @@ function mergePlaylist(existing: Playlist, incoming: Playlist, preferIncoming: b
     ...secondary,
     ...primary,
     id: existing.id,
+    cover: primary.cover ?? secondary.cover,
     items,
     createdAt: Math.min(existing.createdAt, incoming.createdAt),
     updatedAt: Math.max(existing.updatedAt, incoming.updatedAt),
@@ -672,7 +719,19 @@ export async function importJSON(text: string, options: ImportJSONOptions = {}):
       const key = `pl:${incoming.id}`;
       const current = await db.settings.get(key);
       const existing = importedPlaylist(current?.value);
-      const merged = existing ? mergePlaylist(existing, incoming, !!options.updateExisting && incoming.updatedAt > existing.updatedAt) : incoming;
+      const replace = !!options.replacePlaylists && existing && incoming.updatedAt > existing.updatedAt;
+      const merged = existing
+        ? replace
+          ? {
+              ...incoming,
+              id: existing.id,
+              // Пользовательскую обложку не затираем, если в новой версии её просто нет.
+              cover: incoming.cover ?? existing.cover,
+              createdAt: Math.min(existing.createdAt, incoming.createdAt),
+              updatedAt: Math.max(existing.updatedAt, incoming.updatedAt),
+            }
+          : mergePlaylist(existing, incoming, !!options.updateExisting && incoming.updatedAt > existing.updatedAt)
+        : incoming;
       if (!existing || JSON.stringify(merged) !== JSON.stringify(existing)) {
         await setSetting(key, merged);
         playlists++;

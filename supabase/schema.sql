@@ -34,6 +34,67 @@ drop policy if exists "user_data_all_own" on public.user_data;
 create policy "user_data_all_own" on public.user_data
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- 3b. Полная синхронизация: документы и скачанное аудио -------------------------
+-- Каждая станция, плейлист, трек, сессия, настройка и манифест аудио — отдельная
+-- строка. Так обмен идёт порциями и не упирается в лимит размера запроса.
+create table if not exists public.sync_docs (
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  key        text not null,
+  data       jsonb,
+  deleted    boolean not null default false,   -- «надгробие» удалённой записи
+  updated_at timestamptz not null default now(),
+  primary key (user_id, key)
+);
+create index if not exists sync_docs_updated_idx on public.sync_docs (user_id, updated_at);
+
+-- Время меняет только сервер: часы устройств могут расходиться.
+create or replace function public.sync_docs_touch()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_docs_touch on public.sync_docs;
+create trigger sync_docs_touch
+  before insert or update on public.sync_docs
+  for each row execute function public.sync_docs_touch();
+
+alter table public.sync_docs enable row level security;
+drop policy if exists "sync_docs_all_own" on public.sync_docs;
+create policy "sync_docs_all_own" on public.sync_docs
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Приватный бакет для аудиофайлов скачанных плейлистов.
+-- Путь объекта: <user_id>/audio/<base64url от id трека>.bin
+insert into storage.buckets (id, name, public)
+values ('user-media', 'user-media', false)
+on conflict (id) do nothing;
+
+drop policy if exists "user_media_select_own" on storage.objects;
+create policy "user_media_select_own" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "user_media_insert_own" on storage.objects;
+create policy "user_media_insert_own" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "user_media_update_own" on storage.objects;
+create policy "user_media_update_own" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text)
+  with check (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "user_media_delete_own" on storage.objects;
+create policy "user_media_delete_own" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
 -- 4. Автосоздание профиля при регистрации ---------------------------------------
 create or replace function public.handle_new_user()
 returns trigger
@@ -73,25 +134,8 @@ revoke all on function public.delete_my_account() from anon;
 grant execute on function public.delete_my_account() to authenticated;
 
 -- ============================================================================
--- ЭТАП 2 (черновик): нормализованные таблицы вместо одного снимка.
--- Раскомментируйте и доработайте, когда будете переходить на инкрементальную синхронизацию.
+-- Примечание о схеме синхронизации.
+-- Полная синхронизация работает через public.sync_docs (раздел 3b): каждая запись
+-- меняется отдельно, поэтому больших снимков и тяжёлых запросов больше нет.
+-- Таблица user_data остаётся как ручная резервная копия и путь миграции.
 -- ============================================================================
--- create table public.stations (
---   id          text not null,
---   user_id     uuid not null references auth.users (id) on delete cascade,
---   data        jsonb not null,               -- вся карточка станции
---   updated_at  timestamptz not null default now(),
---   deleted_at  timestamptz,                  -- «надгробие» для синхронизации удалений
---   primary key (user_id, id)
--- );
--- create table public.listening_sessions (
---   id          bigint generated always as identity primary key,
---   user_id     uuid not null references auth.users (id) on delete cascade,
---   station_id  text not null,
---   started_at  timestamptz not null,
---   seconds     int not null
--- );
--- alter table public.stations enable row level security;
--- alter table public.listening_sessions enable row level security;
--- create policy "stations_own" on public.stations for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
--- create policy "sessions_own" on public.listening_sessions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
