@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, CloudDownload, CloudUpload, Copy, Loader2, RefreshCw, ServerCog } from "lucide-react";
 import type { AuthUser } from "../../lib/auth/types";
-import { checkCloudReadiness, lastSyncAt, pullFromCloud, pushToCloud, setAudioSync, setAutoSync, syncNow, useSyncState } from "../../lib/sync";
+import { checkCloudReadiness, getSyncState, lastSyncAt, pullFromCloud, pushToCloud, setAudioSync, setAutoSync, syncNow, useSyncState } from "../../lib/sync";
 import { useOfflineItems } from "../../lib/hooks";
 import { fmtBytes } from "../../lib/templates";
 import { toast } from "../../lib/toast";
@@ -97,7 +97,12 @@ export function CloudSync({ user }: { user: AuthUser }) {
           ready.docs ? "ok" : "error"
         );
         if (ready.docs) await syncNow();
-      } else await syncNow();
+      } else {
+        await syncNow();
+        const current = getSyncState();
+        if (current.phase === "setup") toast(current.error ?? "Сначала выполните SQL из supabase/schema.sql", "error");
+        else if (current.phase === "error" && current.error) toast(current.error, "error");
+      }
     } catch (error) {
       toast(error instanceof Error ? error.message : "Синхронизация не удалась", "error");
     } finally {
