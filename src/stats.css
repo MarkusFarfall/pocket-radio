@@ -1,0 +1,308 @@
+/* ============================================================
+   Страница статистики: визуальный слой поверх токенов интерфейса.
+   Стили рассчитаны и на светлую, и на тёмную тему, и на все восемь
+   интерфейсов — поэтому только переменные, без «жёстких» цветов фона.
+   ============================================================ */
+
+.stats-page {
+  --chart-1: var(--accent);
+  --chart-2: #7c5cff;
+  --chart-3: #2f9e8f;
+  --chart-4: #e0a03c;
+  --chart-5: #4a7fe0;
+  --chart-6: #d15aa0;
+  --chart-7: color-mix(in srgb, var(--muted) 75%, transparent);
+  --stats-radius: 26px;
+}
+
+.stats-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--stats-radius);
+  background: var(--surface);
+  padding: 18px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.03);
+}
+@media (min-width: 640px) { .stats-panel { padding: 22px; } }
+
+.stats-panel-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.stats-panel-title { font: 700 1.05rem/1.2 var(--font-display, system-ui); letter-spacing: -0.02em; }
+.stats-panel-sub { margin-top: 4px; font-size: 0.72rem; line-height: 1.5; color: var(--muted); max-width: 56ch; }
+
+/* ------------------------------------------------ герой */
+
+.stats-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--stats-radius);
+  background:
+    radial-gradient(120% 140% at 12% 0%, color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 58%),
+    radial-gradient(90% 120% at 100% 100%, color-mix(in srgb, #7c5cff 12%, transparent) 0%, transparent 60%),
+    var(--surface);
+  padding: 20px;
+}
+@media (min-width: 640px) { .stats-hero { padding: 28px 30px; } }
+.stats-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -10% -60% 40%;
+  height: 220px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 22%, transparent), transparent);
+  filter: blur(38px);
+  pointer-events: none;
+}
+.stats-hero-inner { position: relative; z-index: 1; display: grid; gap: 22px; }
+@media (min-width: 860px) { .stats-hero-inner { grid-template-columns: minmax(0, 1fr) 260px; align-items: center; } }
+
+.stats-eyebrow {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent);
+}
+.stats-hero-title {
+  margin-top: 10px;
+  font: 700 clamp(1.55rem, 5.2vw, 2.4rem)/1.06 var(--font-display, system-ui);
+  letter-spacing: -0.035em;
+}
+.stats-hero-tagline { margin-top: 8px; max-width: 46ch; font-size: 0.82rem; line-height: 1.55; color: var(--muted); }
+
+.stats-total {
+  margin-top: 18px;
+  font: 700 clamp(2.3rem, 11vw, 3.9rem)/0.98 var(--font-display, system-ui);
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+}
+.stats-total-unit { font-size: 0.34em; font-weight: 700; letter-spacing: 0; margin-left: 6px; color: var(--muted); }
+
+.stats-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+.stats-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  font-size: 0.71rem; font-weight: 600; color: var(--ink);
+  backdrop-filter: blur(6px);
+}
+.stats-chip[data-tone="up"] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.stats-chip[data-tone="down"] { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 32%, transparent); }
+.stats-chip svg { flex-shrink: 0; }
+
+.stats-traits { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.stats-trait {
+  font-size: 0.63rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent) 78%, var(--ink));
+  padding: 3px 8px; border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+
+/* звуковой отпечаток: 24 радиальных столбика */
+.stats-print { position: relative; width: 100%; max-width: 236px; margin-inline: auto; aspect-ratio: 1; }
+.stats-print svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.stats-print-label {
+  position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none;
+}
+.stats-print-label b { display: block; max-width: 74px; margin-inline: auto; font: 700 1.22rem/1.05 var(--font-display, system-ui); letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.stats-print-label span { display: block; margin-top: 3px; font-size: 0.6rem; letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted); }
+
+/* ------------------------------------------------ полоса метрик */
+
+.stats-metric {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 13px 14px;
+  overflow: hidden;
+}
+.stats-metric::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  opacity: 0; transition: opacity 0.2s ease;
+}
+.stats-metric:hover::before { opacity: 1; }
+.stats-metric-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9px; background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--accent); flex-shrink: 0; }
+.stats-metric-value { margin-top: 9px; font: 700 1.32rem/1.1 var(--font-display, system-ui); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stats-metric-detail { margin-top: 3px; font-size: 0.66rem; line-height: 1.35; color: var(--muted); }
+
+/* ------------------------------------------------ тепловая карта */
+
+.stats-heat-scroll { overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.stats-heat { display: inline-flex; flex-direction: column; gap: 5px; min-width: 0; }
+.stats-heat-months { position: relative; height: 13px; margin-left: 22px; }
+.stats-heat-month:first-child { transform: translateX(1px); }
+.stats-heat-month { position: absolute; top: 0; font-size: 0.56rem; letter-spacing: 0.02em; color: var(--muted); white-space: nowrap; }
+.stats-heat-body { display: flex; gap: 5px; }
+.stats-heat-weekdays { display: grid; grid-template-rows: repeat(7, 1fr); gap: 3px; width: 18px; flex-shrink: 0; }
+.stats-heat-weekdays span { font-size: 0.52rem; line-height: 1; color: var(--muted); display: flex; align-items: center; }
+.stats-heat-grid { display: flex; gap: 3px; }
+.stats-heat-week { display: grid; grid-template-rows: repeat(7, 1fr); gap: 3px; }
+.stats-heat-cell {
+  width: 11px; height: 11px; border-radius: 3px;
+  background: color-mix(in srgb, var(--line) 62%, transparent);
+  transition: transform 0.12s ease, outline-color 0.12s ease;
+  outline: 1px solid transparent;
+}
+@media (min-width: 768px) { .stats-heat-cell { width: 13px; height: 13px; border-radius: 4px; } }
+.stats-heat-cell[data-level="1"] { background: color-mix(in srgb, var(--accent) 26%, var(--surface)); }
+.stats-heat-cell[data-level="2"] { background: color-mix(in srgb, var(--accent) 46%, var(--surface)); }
+.stats-heat-cell[data-level="3"] { background: color-mix(in srgb, var(--accent) 70%, var(--surface)); }
+.stats-heat-cell[data-level="4"] { background: var(--accent); }
+.stats-heat-cell[data-level="null"] { background: transparent; outline-color: color-mix(in srgb, var(--line) 45%, transparent); }
+.stats-heat-cell:hover { transform: scale(1.22); outline-color: var(--ink); position: relative; z-index: 2; }
+.stats-heat-legend { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 0.62rem; color: var(--muted); flex-wrap: wrap; }
+.stats-heat-legend .stats-heat-cell { width: 10px; height: 10px; }
+/* на узких экранах показываем последние полгода, а не весь год в микроскопическом масштабе */
+@media (max-width: 700px) {
+  .stats-heat-week[data-old="1"] { display: none; }
+}
+
+/* ------------------------------------------------ график по дням */
+
+.stats-area { position: relative; display: flex; flex-direction: column; width: 100%; flex: 1; }
+.stats-area > div { margin-top: auto; }
+.stats-area svg { display: block; width: 100%; height: 168px; min-height: 168px; flex: 1; overflow: visible; }
+@media (min-width: 640px) { .stats-area svg { height: 210px; min-height: 186px; } }
+.stats-area-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 0.66rem; color: var(--muted); }
+.stats-area-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+
+/* ------------------------------------------------ донат и легенда */
+
+.stats-donut-wrap { display: grid; gap: 16px; align-items: center; }
+@media (min-width: 480px) { .stats-donut-wrap { grid-template-columns: 148px minmax(0, 1fr); } }
+.stats-donut { position: relative; width: 148px; height: 148px; margin-inline: auto; }
+.stats-donut svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.stats-donut-center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+.stats-donut-center b { font: 700 1.4rem/1 var(--font-display, system-ui); letter-spacing: -0.03em; }
+.stats-donut-center span { display: block; margin-top: 3px; font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); max-width: 88px; }
+
+.stats-legend { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stats-legend-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 9px; align-items: center; font-size: 0.74rem; }
+.stats-legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.stats-legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: .76rem; }
+.stats-legend-time { display: block; margin-top: 1px; font-size: .64rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats-legend-value { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.68rem; white-space: nowrap; }
+.stats-legend-bar { grid-column: 1 / -1; height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--line) 50%, transparent); overflow: hidden; margin-top: -2px; opacity: .6; }
+.stats-legend-bar > i { display: block; height: 100%; border-radius: 2px; }
+
+/* ------------------------------------------------ неделя × часы */
+
+.stats-weekly { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 6px; align-items: stretch; min-height: 178px; flex: 1; }
+.stats-weekly-labels { display: grid; grid-template-rows: repeat(7, minmax(0, 18px)); align-content: space-between; }
+.stats-weekly-labels span { display: flex; align-items: center; font-size: 0.56rem; color: var(--muted); }
+.stats-weekly-grid { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); grid-template-rows: repeat(7, minmax(0, 18px)); align-content: space-between; gap: 3px; min-width: 0; }
+.stats-weekly-cell { height: 100%; min-height: 9px; border-radius: 3px; background: color-mix(in srgb, var(--line) 55%, transparent); }
+.stats-weekly-cell[data-h="1"] { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.stats-weekly-cell[data-h="2"] { background: color-mix(in srgb, var(--accent) 42%, var(--surface)); }
+.stats-weekly-cell[data-h="3"] { background: color-mix(in srgb, var(--accent) 64%, var(--surface)); }
+.stats-weekly-cell[data-h="4"] { background: var(--accent); }
+.stats-weekly-cell:hover { outline: 1.5px solid var(--ink); }
+.stats-weekly-axis { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 6px; margin-left: 32px; font-size: 0.56rem; color: var(--muted); }
+
+/* ------------------------------------------------ рекорды */
+
+.stats-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 760px) { .stats-records { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1180px) { .stats-records { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.stats-record {
+  min-width: 0; border-radius: 16px; padding: 13px;
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.stats-record-icon { color: var(--accent); }
+.stats-record-label { margin-top: 8px; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+.stats-record-value { margin-top: 3px; font: 700 1.02rem/1.15 var(--font-display, system-ui); letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; }
+.stats-record-detail { margin-top: 3px; font-size: 0.62rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------ достижения */
+
+.stats-badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 158px), 1fr)); gap: 10px; }
+.stats-badge {
+  position: relative;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 13px; border-radius: 16px; min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  opacity: 0.62;
+  transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+.stats-badge:hover { transform: translateY(-1px); opacity: 0.82; }
+.stats-badge[data-unlocked="true"] {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  background:
+    radial-gradient(120% 130% at 0% 0%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 62%),
+    var(--surface);
+}
+.stats-badge-icon {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent); color: var(--muted);
+}
+.stats-badge[data-unlocked="true"] .stats-badge-icon { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.stats-badge-title { font-size: 0.76rem; font-weight: 700; }
+.stats-badge-hint { font-size: 0.62rem; line-height: 1.4; color: var(--muted); min-height: 2.6em; }
+.stats-badge-track { height: 4px; border-radius: 3px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.stats-badge-track > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.stats-badge-progress { font-size: 0.58rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------ сравнения */
+
+.stats-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 900px) { .stats-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.stats-fact {
+  min-width: 0; border-radius: 16px; padding: 14px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
+}
+.stats-fact-value { font: 700 1.5rem/1 var(--font-display, system-ui); letter-spacing: -0.03em; color: color-mix(in srgb, var(--accent) 82%, var(--ink)); }
+.stats-fact-label { margin-top: 5px; font-size: 0.72rem; font-weight: 600; }
+.stats-fact-hint { margin-top: 3px; font-size: 0.6rem; line-height: 1.4; color: var(--muted); }
+
+/* ------------------------------------------------ станции */
+
+.stats-station { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.stats-station:first-child { border-top: 0; padding-top: 0; }
+.stats-station-rank {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
+  font-size: 0.68rem; font-weight: 800; color: var(--muted);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+.stats-station[data-top="1"] .stats-station-rank { background: var(--accent); color: var(--accent-ink); }
+.stats-station[data-top="2"] .stats-station-rank,
+.stats-station[data-top="3"] .stats-station-rank { background: color-mix(in srgb, var(--accent) 20%, var(--surface)); color: var(--accent); }
+.stats-station-name { font-size: 0.8rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-station-meta { font-size: 0.63rem; color: var(--muted); margin-top: 2px; }
+.stats-station-bar { height: 4px; border-radius: 3px; background: color-mix(in srgb, var(--line) 55%, transparent); margin-top: 6px; overflow: hidden; }
+.stats-station-bar > i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 60%, transparent), var(--accent)); }
+.stats-station-time { font-size: 0.68rem; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+
+/* ------------------------------------------------ лента сессий */
+
+.stats-feed { display: flex; flex-direction: column; }
+.stats-feed-day { margin-top: 14px; font-size: 0.6rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.stats-feed-day:first-child { margin-top: 0; }
+.stats-feed-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
+.stats-feed-row:last-child { border-bottom: 0; }
+.stats-feed-icon { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+.stats-feed-name { font-size: 0.78rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-feed-meta { margin-top: 2px; font-size: 0.62rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.stats-feed-time { font-size: 0.7rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ------------------------------------------------ здоровье */
+
+.stats-health { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.stats-health-cell { border-radius: 14px; padding: 12px; background: color-mix(in srgb, var(--surface-2) 60%, transparent); min-width: 0; }
+.stats-health-label { display: flex; align-items: center; gap: 6px; font-size: 0.64rem; color: var(--muted); font-weight: 600; }
+.stats-health-value { margin-top: 5px; font: 700 1.18rem/1.1 var(--font-display, system-ui); letter-spacing: -0.02em; }
+
+/* мягкое появление карточек — не мешает при reduce motion */
+@media (prefers-reduced-motion: no-preference) {
+  .stats-reveal { animation: stats-rise 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both; }
+  .stats-reveal:nth-child(2) { animation-delay: 0.04s; }
+  .stats-reveal:nth-child(3) { animation-delay: 0.08s; }
+  .stats-reveal:nth-child(4) { animation-delay: 0.12s; }
+}
+@keyframes stats-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

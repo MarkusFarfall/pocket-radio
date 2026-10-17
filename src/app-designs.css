@@ -225,7 +225,7 @@
 .app-layout-editorial .playlist-card { display: grid; grid-template-columns: minmax(80px,.65fr) minmax(0,1fr); align-items: center; gap: 22px; border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 22px 0; background: transparent; }
 .app-layout-editorial .playlist-card-copy { margin: 0; }
 .app-layout-editorial .playlist-card-copy .font-display { font: 500 1.8rem/1.05 Georgia,serif; }
-.app-layout-editorial .stats-metric { background: transparent; border: 0; border-top: 2px solid var(--ink); padding: 20px 0; }
+.app-layout-editorial .stats-metric { background: transparent; border: 0; border-top: 2px solid var(--ink); border-radius: 0; padding: 20px 0; }
 .app-layout-editorial .stats-metric .font-display { font: 500 2.2rem Georgia,serif; }
 .app-layout-library .station-card { padding: 0; background: transparent; border: 0; gap: 14px; box-shadow: none; }
 .app-layout-library .station-card-art { border-radius: 14px; overflow: hidden; }
