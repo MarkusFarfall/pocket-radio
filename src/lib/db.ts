@@ -4,7 +4,7 @@ import { TEMPLATES, guessKind, normalizeUrl, uid, validUrl } from "./templates";
 import { fixText } from "./text";
 import { artworkUrl, isPlaceholderArtwork } from "./artwork";
 import { markSyncAll, markSyncKey, markSyncKeys } from "./syncBus";
-import { audioDocKey, eventFingerprint, playlistDocKey, progressDocKey, stationDocKey, trackDocKey } from "./syncKeys";
+import { eventFingerprint, playlistDocKey, progressDocKey, stationDocKey, trackDocKey } from "./syncKeys";
 
 export interface Setting {
   key: string;
@@ -284,7 +284,7 @@ export async function deleteStation(id: string) {
 
 export async function deleteStations(ids: string[]) {
   const doomed = (await db.stations.bulkGet(ids)).filter((s): s is Station => !!s);
-  markSyncKeys(doomed.flatMap((s) => [stationDocKey(s.syncId ?? s.id), audioDocKey(s.id)]));
+  markSyncKeys(doomed.map((s) => stationDocKey(s.syncId ?? s.id)));
   const cached = new Set((await db.offline.bulkGet(ids)).filter((o) => !!o).map((o) => o!.stationId));
   await db.transaction("rw", [db.stations, db.offline], async () => {
     await db.stations.bulkDelete(ids);

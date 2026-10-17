@@ -17,13 +17,12 @@ export const eventDocKey = (fingerprint: string) => `event:${hashString(fingerpr
 export const eventFingerprint = (e: { stationId: string; type: string; ts: number; ms?: number; message?: string }) =>
   JSON.stringify([e.stationId, e.type, e.ts, e.ms ?? null, e.message ?? ""]);
 export const prefDocKey = (name: string) => `pref:${name}`;
-export const audioDocKey = (stationId: string) => `audio:${stationId}`;
 
-export type DocKind = "station" | "playlist" | "progress" | "track" | "session" | "event" | "pref" | "audio";
+export type DocKind = "station" | "playlist" | "progress" | "track" | "session" | "event" | "pref";
 
 export function docKind(key: string): DocKind | null {
   const kind = key.slice(0, key.indexOf(":"));
-  return ["station", "playlist", "progress", "track", "session", "event", "pref", "audio"].includes(kind) ? (kind as DocKind) : null;
+  return ["station", "playlist", "progress", "track", "session", "event", "pref"].includes(kind) ? (kind as DocKind) : null;
 }
 
 export function docKeyValue(key: string): string {

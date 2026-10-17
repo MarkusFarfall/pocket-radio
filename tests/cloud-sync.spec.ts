@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import { expect, test, type Page } from "@playwright/test";
 
 const BASE = "http://127.0.0.1:4175";
@@ -9,28 +8,6 @@ const SB = {
   expires_at: Math.floor(Date.now() / 1000) + 3600,
   user: { id: USER, email: "sync@example.test" },
 };
-
-function wav(seconds = 1, sampleRate = 8000): Buffer {
-  const samples = seconds * sampleRate;
-  const bytes = samples * 2;
-  const out = Buffer.alloc(44 + bytes);
-  out.write("RIFF", 0);
-  out.writeUInt32LE(36 + bytes, 4);
-  out.write("WAVE", 8);
-  out.write("fmt ", 12);
-  out.writeUInt32LE(16, 16);
-  out.writeUInt16LE(1, 20);
-  out.writeUInt16LE(1, 22);
-  out.writeUInt32LE(sampleRate, 24);
-  out.writeUInt32LE(sampleRate * 2, 28);
-  out.writeUInt16LE(2, 32);
-  out.writeUInt16LE(16, 34);
-  out.write("data", 36);
-  out.writeUInt32LE(bytes, 40);
-  return out;
-}
-
-const AUDIO = wav();
 
 async function openAsCloud(page: Page) {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -46,27 +23,28 @@ async function openAsCloud(page: Page) {
   await expect(page.getByRole("button", { name: /Быстрый старт/ }).first()).toBeVisible();
 }
 
-test("first sync uploads stations, playlists with custom covers, prefs, stats and offline audio", async ({ page }) => {
-  await openAsCloud(page);
-  const docs: any[] = [];
-  const uploads: string[] = [];
-  let uploadBytes = 0;
-
-  await page.route("**/*", async (route) => {
+function mockSupabase(page: Page, onDocs: (rows: unknown[]) => Promise<unknown[]>, audios?: string[]) {
+  return page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.hostname !== "zcohgsqefkygwvyzrico.supabase.co") return route.continue();
     const path = url.pathname;
     if (path === "/rest/v1/sync_docs") {
       if (route.request().method() === "POST") {
         const body = JSON.parse(route.request().postData() ?? "[]");
-        docs.push(...body);
+        const written = await onDocs(body);
         await route.fulfill({
           status: 201,
           contentType: "application/json",
-          body: JSON.stringify(body.map((row: any) => ({ key: row.key, updated_at: "2026-10-17T12:00:00.000Z" }))),
+          body: JSON.stringify(written.map((row: any) => ({ key: row.key, updated_at: "2026-10-17T12:00:00.000Z" }))),
         });
         return;
       }
+      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      return;
+    }
+    // Любой запрос к Storage означает, что аудио снова пытаются отправить в облако.
+    if (path.startsWith("/storage/v1/")) {
+      audios?.push(path);
       await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
       return;
     }
@@ -74,18 +52,22 @@ test("first sync uploads stations, playlists with custom covers, prefs, stats an
       await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
       return;
     }
-    if (path === "/storage/v1/object/list/user-media") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-      return;
-    }
-    if (path.startsWith("/storage/v1/object/user-media/")) {
-      uploads.push(path);
-      uploadBytes += route.request().postDataBuffer()?.length ?? 0;
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
-      return;
-    }
     await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
+}
+
+test("first sync uploads stations, playlists with custom covers, stats and prefs but never audio", async ({ page }) => {
+  await openAsCloud(page);
+  const docs: any[] = [];
+  const storageCalls: string[] = [];
+  await mockSupabase(
+    page,
+    async (body) => {
+      docs.push(...body);
+      return body;
+    },
+    storageCalls
+  );
 
   const seeded = await page.evaluate(async () => {
     const { db, saveStation, setSetting } = await import("/src/lib/db.ts");
@@ -125,24 +107,28 @@ test("first sync uploads stations, playlists with custom covers, prefs, stats an
   }, USER);
 
   await expect.poll(() => docs.length, { timeout: 25_000 }).toBeGreaterThan(0);
-  await expect.poll(() => uploads.length, { timeout: 25_000 }).toBeGreaterThan(0);
 
   const keys = docs.map((doc) => doc.key);
   expect(keys).toContain(`station:${seeded.stationId}`);
   expect(keys).toContain("playlist:pl-1");
   expect(keys).toContain("session:session-1");
   expect(keys).toContain("pref:theme");
-  expect(keys).toContain(`audio:${seeded.stationId}`);
+  expect(keys.some((key) => key.startsWith("audio:"))).toBe(false);
 
   const playlist = docs.find((doc) => doc.key === "playlist:pl-1");
   expect(playlist.data.cover).toBe(seeded.cover);
   expect(playlist.data.items[0].title).toBe("Трек один");
 
-  expect(uploads[0]).toContain(`/audio/`);
-  expect(uploadBytes).toBeGreaterThan(0);
+  // Скачанное аудио остаётся локальным: Storage не вызывается вовсе.
+  expect(storageCalls).toEqual([]);
+  const localAudio = await page.evaluate(async (stationId) => {
+    const { db } = await import("/src/lib/db.ts");
+    return db.offline.get(stationId);
+  }, seeded.stationId);
+  expect(localAudio?.size).toBe(4096);
 });
 
-test("pull restores a playlist with its user cover, stats, theme and offline audio", async ({ page }) => {
+test("pull restores a playlist with its user cover, stats and theme on another device", async ({ page }) => {
   await openAsCloud(page);
   const remote = [
     {
@@ -205,15 +191,9 @@ test("pull restores a playlist with its user cover, stats, theme and offline aud
       deleted: false,
       updated_at: "2026-10-17T10:00:03.000Z",
     },
-    {
-      key: "audio:pli:t1",
-      data: { stationId: "pli:t1", size: AUDIO.length, ts: 2000 },
-      deleted: false,
-      updated_at: "2026-10-17T10:00:04.000Z",
-    },
   ];
 
-  let downloads = 0;
+  const storageCalls: string[] = [];
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.hostname !== "zcohgsqefkygwvyzrico.supabase.co") return route.continue();
@@ -231,21 +211,13 @@ test("pull restores a playlist with its user cover, stats, theme and offline aud
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(remote) });
       return;
     }
+    if (path.startsWith("/storage/v1/")) {
+      storageCalls.push(path);
+      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+      return;
+    }
     if (path.startsWith("/rest/v1/")) {
       await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-      return;
-    }
-    if (path === "/storage/v1/object/list/user-media") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-      return;
-    }
-    if (path.startsWith("/storage/v1/object/authenticated/user-media/")) {
-      downloads++;
-      await route.fulfill({ status: 200, contentType: "audio/wav", body: AUDIO });
-      return;
-    }
-    if (path.startsWith("/storage/v1/object/user-media/")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
@@ -255,12 +227,6 @@ test("pull restores a playlist with its user cover, stats, theme and offline aud
     const { db } = await import("/src/lib/db.ts");
     await Promise.all([db.stations.clear(), db.sessions.clear(), db.events.clear(), db.tracks.clear(), db.settings.clear(), db.syncMeta.clear()]);
     await db.offline.clear();
-    try {
-      const cache = await caches.open("radio-audio-v1");
-      for (const key of await cache.keys()) await cache.delete(key);
-    } catch {
-      /* Cache API недоступен */
-    }
   });
 
   await page.evaluate(async (user) => {
@@ -268,21 +234,26 @@ test("pull restores a playlist with its user cover, stats, theme and offline aud
     startSync(user, true);
   }, USER);
 
-  await expect.poll(() => downloads, { timeout: 25_000 }).toBeGreaterThan(0);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const { db } = await import("/src/lib/db.ts");
+          return db.settings.get("pl:pl-remote").then((row) => !!row);
+        }),
+      { timeout: 25_000 }
+    )
+    .toBe(true);
 
   const state = await page.evaluate(async () => {
     const { db } = await import("/src/lib/db.ts");
-    const { audioCacheKey } = await import("/src/lib/offline.ts");
     const station = (await db.stations.toArray()).find((item) => item.syncId === "sync-a");
     const playlist = (await db.settings.get("pl:pl-remote"))?.value as { name: string; cover?: string; items: { title: string }[] } | undefined;
-    const cache = await caches.open("radio-audio-v1");
-    const cached = await cache.match(audioCacheKey("pli:t1"));
     return {
       station: station?.name,
       playlist,
       sessions: await db.sessions.count(),
-      offline: await db.offline.get("pli:t1"),
-      cached: !!cached,
+      offline: await db.offline.count(),
       theme: localStorage.getItem("radio.theme"),
     };
   });
@@ -292,8 +263,9 @@ test("pull restores a playlist with its user cover, stats, theme and offline aud
   expect(state.playlist?.cover).toBe("data:image/jpeg;base64,user-cover");
   expect(state.playlist?.items[0]?.title).toBe("Трек издалека");
   expect(state.sessions).toBe(1);
-  expect(state.offline?.size).toBe(AUDIO.length);
-  expect(state.cached).toBe(true);
+  // Аудио не приходит из облака: плейлист есть, файлов нет.
+  expect(state.offline).toBe(0);
+  expect(storageCalls).toEqual([]);
   expect(state.theme).toBe("dark");
 });
 
@@ -325,29 +297,9 @@ test("remote deletions remove the playlist and station locally and never resurre
 test("local deletion after a successful sync is sent as a tombstone", async ({ page }) => {
   await openAsCloud(page);
   const posts: any[] = [];
-  await page.route("**/*", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.hostname !== "zcohgsqefkygwvyzrico.supabase.co") return route.continue();
-    const path = url.pathname;
-    if (path === "/rest/v1/sync_docs" && route.request().method() === "POST") {
-      const body = JSON.parse(route.request().postData() ?? "[]");
-      posts.push(...body);
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify(body.map((row: any) => ({ key: row.key, updated_at: "2026-10-17T12:30:00.000Z" }))),
-      });
-      return;
-    }
-    if (path.startsWith("/rest/v1/")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-      return;
-    }
-    if (path === "/storage/v1/object/list/user-media") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  await mockSupabase(page, async (body) => {
+    posts.push(...body);
+    return body;
   });
 
   const station = await page.evaluate(async () => {

@@ -2,30 +2,18 @@ import { useSyncExternalStore } from "react";
 import { activeDbName, db, exportJSON, importJSON, type ImportJSONResult, type SyncMeta } from "./db";
 import { currentUserId, getAccessToken, supabaseConfig } from "./auth/supabase";
 import { provider } from "./auth";
-import {
-  CloudError,
-  audioObjectPath,
-  deleteAudioObjects,
-  downloadAudioObject,
-  listAudioObjects,
-  probeBucket,
-  probeDocs,
-  restJson,
-  uploadAudioObject,
-  type CloudReadiness,
-} from "./cloud";
+import { CloudError, probeDocs, restJson, type CloudReadiness } from "./cloud";
 import { applyDocs, buildAllDocs, buildDoc, metaForDoc, type SyncDoc } from "./syncDocs";
-import { audioDocKey, docKeyValue, docKind, hashDoc } from "./syncKeys";
+import { docKind, hashDoc } from "./syncKeys";
 import { markSyncAll, onSyncSignal } from "./syncBus";
-import { audioCacheKey, putOfflineBlob } from "./offline";
-import { itemStationId } from "./playlistModel";
 
 /**
  * Полная синхронизация аккаунта.
  *
  * Каждая сущность — отдельный документ в `sync_docs`: станция, плейлист (вместе с
- * пользовательской обложкой), прогресс, сохранённый трек, сессия, событие, настройка
- * оформления и манифест скачанного аудио. Сами аудиофайлы лежат в Storage.
+ * пользовательской обложкой), прогресс, сохранённый трек, сессия, событие и настройка
+ * оформления. Скачанные аудиофайлы не переносятся: они остаются на своём устройстве,
+ * облако хранит только метаданные плейлистов.
  *
  * Почему не одним снимком, как раньше: у REST Supabase ограничение на размер запроса,
  * а снимок со статистикой и обложками легко перерастает его. Документы также позволяют
@@ -43,7 +31,6 @@ export interface SyncState {
   active: boolean;
   userId: string | null;
   auto: boolean;
-  audio: boolean;
   phase: SyncPhase;
   error: string | null;
   lastSyncAt: number | null;
@@ -51,20 +38,12 @@ export interface SyncState {
   pushed: number;
   pulled: number;
   pending: number;
-  audioPhase: "idle" | "uploading" | "downloading";
-  audioDone: number;
-  audioTotal: number;
-  audioBytes: number;
-  audioError: string | null;
-  audioSkipped: number;
 }
 
 const AUTO_KEY = "pr.sync.auto";
-const AUDIO_PREF_KEY = "pr.sync.audio";
 const PULL_KEY = "pr.sync.pull";
 const AT_KEY = "pr.sync.at";
 const LEGACY_KEY = "pr.sync.legacy";
-const MAX_UPLOAD = 45 * 1024 * 1024; // бесплатный Supabase ограничивает объект 50 МБ
 const PAGE = 500;
 const PUSH_BYTES = 320_000;
 
@@ -80,7 +59,6 @@ let state: SyncState = {
   active: false,
   userId: null,
   auto: initialPref(AUTO_KEY),
-  audio: initialPref(AUDIO_PREF_KEY),
   phase: "off",
   error: null,
   lastSyncAt: null,
@@ -88,12 +66,6 @@ let state: SyncState = {
   pushed: 0,
   pulled: 0,
   pending: 0,
-  audioPhase: "idle",
-  audioDone: 0,
-  audioTotal: 0,
-  audioBytes: 0,
-  audioError: null,
-  audioSkipped: 0,
 };
 
 const subscribers = new Set<() => void>();
@@ -135,12 +107,6 @@ export const syncAvailable = () => provider.id === "supabase";
 export function setAutoSync(value: boolean) {
   prefSet(AUTO_KEY, value);
   emit({ auto: value });
-  if (value) void queueCycle("manual");
-}
-
-export function setAudioSync(value: boolean) {
-  prefSet(AUDIO_PREF_KEY, value);
-  emit({ audio: value });
   if (value) void queueCycle("manual");
 }
 
@@ -202,11 +168,7 @@ interface Engine {
   pending: Set<string>;
   lastPull: string | null;
   lastPullCheck: number;
-  lastAudioCheck: number;
   lastFull: number;
-  lastBucketProbe: number;
-  downloads: Set<string>;
-  deletes: Set<string>;
   timers: number[];
   unsubscribe: () => void;
   cleanups: (() => void)[];
@@ -231,11 +193,7 @@ export function startSync(userId: string, force = false): () => void {
     pending: new Set(),
     lastPull: readPull(userId),
     lastPullCheck: 0,
-    lastAudioCheck: 0,
     lastFull: 0,
-    lastBucketProbe: 0,
-    downloads: new Set(),
-    deletes: new Set(),
     timers: [],
     unsubscribe: () => undefined,
     cleanups: [],
@@ -245,19 +203,12 @@ export function startSync(userId: string, force = false): () => void {
     active: true,
     userId,
     auto: prefOn(AUTO_KEY),
-    audio: prefOn(AUDIO_PREF_KEY),
     phase: "idle",
     error: null,
     lastSyncAt: readAt(userId),
     pushed: 0,
     pulled: 0,
     pending: 0,
-    audioPhase: "idle",
-    audioDone: 0,
-    audioTotal: 0,
-    audioBytes: 0,
-    audioError: null,
-    audioSkipped: 0,
   });
 
   created.unsubscribe = onSyncSignal((keys) => {
@@ -304,7 +255,7 @@ export function stopSync() {
     window.clearTimeout(deferredTimer);
     deferredTimer = null;
   }
-  emit({ active: false, userId: null, phase: "off", pending: 0, audioPhase: "idle" });
+  emit({ active: false, userId: null, phase: "off", pending: 0 });
 }
 
 function queueCycle(reason: CycleReason): Promise<void> {
@@ -366,7 +317,6 @@ async function runCycle(reason: CycleReason) {
       await pushDocs(current, fullScan);
       if (fullScan) current.lastFull = Date.now();
     }
-    if (!current.stopped) await audioCycle(current, manual);
     if (!current.stopped) {
       const at = Date.now();
       saveAt(current.userId, at);
@@ -384,18 +334,11 @@ async function runCycle(reason: CycleReason) {
   }
 }
 
-async function ensureReady(current: Engine): Promise<boolean> {
+async function ensureReady(_current: Engine): Promise<boolean> {
   try {
-    if (state.readiness?.docs && (state.readiness.bucket || !prefOn(AUDIO_PREF_KEY) || Date.now() - current.lastBucketProbe < 60_000)) {
-      return state.readiness.docs;
-    }
-    const docs = state.readiness?.docs ? true : await probeDocs();
-    let bucket = state.readiness?.bucket ?? false;
-    if (docs && !bucket && prefOn(AUDIO_PREF_KEY)) {
-      current.lastBucketProbe = Date.now();
-      bucket = await probeBucket(current.userId).catch(() => false);
-    }
-    emit({ readiness: { docs, bucket } });
+    if (state.readiness?.docs) return true;
+    const docs = await probeDocs();
+    emit({ readiness: { docs } });
     if (!docs) {
       emit({ phase: "setup", error: "В проекте Supabase ещё нет таблицы sync_docs. Один раз выполните supabase/schema.sql в SQL Editor." });
       return false;
@@ -453,7 +396,6 @@ async function pullDocs(current: Engine, initial: boolean): Promise<number> {
     if (prepared.docs.length) {
       const outcome = await applyDocs(prepared.docs);
       applied += outcome.keys.length;
-      outcome.audioDownload.forEach((id) => current.downloads.add(id));
       await saveAppliedMeta(outcome.keys, prepared.docs, prepared.at);
       emit({ pulled: state.pulled + outcome.keys.length });
     }
@@ -579,9 +521,6 @@ async function pushDocs(current: Engine, full: boolean): Promise<void> {
     const metas = await db.syncMeta.toArray();
     for (const key of all.keys()) keysToCheck.add(key);
     for (const meta of metas) {
-      // Манифест аудио — не «запись, которая должна быть везде»: устройство могло
-      // просто не скачивать этот файл. Удаление аудио приходит отдельным сигналом.
-      if (docKind(meta.key) === "audio") continue;
       if (!all.has(meta.key) && meta.deleted !== 1) keysToCheck.add(meta.key);
     }
   }
@@ -653,153 +592,14 @@ async function pushChunk(current: Engine, docs: SyncDoc[]): Promise<void> {
       at: stamps.get(doc.key) ?? Date.now(),
     }));
     await db.syncMeta.bulkPut(metas);
-    for (const doc of docs) {
-      if (doc.deleted) {
-        if (docKind(doc.key) === "audio") current.deletes.add(docKeyValue(doc.key));
-      }
-    }
     emit({ pushed: state.pushed + docs.length });
   } catch (error) {
-    if (error instanceof CloudError && error.code === "size" && docs.length > 1) {
-      const middle = Math.ceil(docs.length / 2);
-      await pushChunk(current, docs.slice(0, middle));
-      await pushChunk(current, docs.slice(middle));
-      return;
-    }
     if (error instanceof CloudError && error.code === "table") {
-      emit({ phase: "setup", readiness: { docs: false, bucket: state.readiness?.bucket ?? false } });
+      emit({ phase: "setup", readiness: { docs: false } });
       return;
     }
     throw error;
   }
-}
-
-/* ----------------------------------- аудио ----------------------------------- */
-
-async function audioCycle(current: Engine, full: boolean) {
-  if (!prefOn(AUDIO_PREF_KEY)) return;
-  if (!current.downloads.size && !current.deletes.size && !full && Date.now() - current.lastAudioCheck < 60_000) return;
-  current.lastAudioCheck = Date.now();
-  const ready = state.readiness?.bucket ?? (await probeBucket(current.userId).catch(() => false));
-  emit({ readiness: { docs: true, bucket: ready } });
-  if (!ready) {
-    if (current.downloads.size || full) emit({ audioError: "Бакет user-media не найден — выполните supabase/schema.sql" });
-    return;
-  }
-
-  // Удаления сначала: не тратим трафик на файлы, которые уже удалены.
-  if (current.deletes.size) {
-    const ids = [...current.deletes];
-    current.deletes.clear();
-    try {
-      await deleteAudioObjects(ids.map((id) => audioObjectPath(current.userId, id)));
-    } catch (error) {
-      emit({ audioError: error instanceof Error ? error.message : "Не удалось удалить аудио из облака" });
-    }
-  }
-
-  if (full) {
-    // Ручная синхронизация повторяет и неудавшиеся раньше загрузки.
-    const metas = await db.syncMeta.toArray();
-    metas.filter((meta) => meta.key.startsWith("audio:") && meta.deleted !== 1).forEach((meta) => current.downloads.add(docKeyValue(meta.key)));
-  }
-  const downloads = [...current.downloads];
-  if (downloads.length) {
-    current.downloads.clear();
-    await downloadAudio(current, downloads);
-  }
-
-  if (!full && !current.pending.size) return;
-  await uploadAudio(current);
-}
-
-async function referencedStations(): Promise<Set<string>> {
-  const [stations, playlists] = await Promise.all([
-    db.stations.toArray(),
-    db.settings.where(":id").startsWith("pl:").toArray(),
-  ]);
-  const ids = new Set(stations.map((station) => station.id));
-  for (const row of playlists) {
-    const playlist = row.value as { items?: { id?: string }[] };
-    for (const item of playlist.items ?? []) if (item.id) ids.add(itemStationId(item.id));
-  }
-  return ids;
-}
-
-async function downloadAudio(current: Engine, ids: string[]) {
-  const referenced = await referencedStations();
-  const todo = ids.filter((id) => referenced.has(id));
-  if (!todo.length) return;
-  const offline = new Set((await db.offline.toArray()).map((item) => item.stationId));
-  const targets = todo.filter((id) => !offline.has(id));
-  if (!targets.length) return;
-
-  emit({ audioPhase: "downloading", audioDone: 0, audioTotal: targets.length, audioBytes: 0, audioError: null });
-  let done = 0;
-  let bytes = 0;
-  let failed = 0;
-  for (const id of targets) {
-    if (current.stopped) return;
-    try {
-      const blob = await downloadAudioObject(audioObjectPath(current.userId, id));
-      if (activeDbName() !== current.dbName) return;
-      await putOfflineBlob(id, "", blob, blob.type || "audio/mpeg", blob.size);
-      bytes += blob.size;
-      done++;
-      emit({ audioDone: done, audioBytes: bytes });
-    } catch (error) {
-      failed++;
-      if (error instanceof CloudError && error.code === "notfound") {
-        // Манифест есть, файла нет — облачная запись устарела.
-        await db.syncMeta.delete(audioDocKey(id));
-        continue;
-      }
-      emit({ audioError: error instanceof Error ? error.message : "Не удалось скачать аудио" });
-    }
-  }
-  emit({ audioPhase: "idle", audioDone: done, audioTotal: targets.length, audioSkipped: state.audioSkipped + failed });
-  if (done) markSyncAll();
-}
-
-async function uploadAudio(current: Engine) {
-  if (!prefOn(AUDIO_PREF_KEY)) return;
-  const [local, cloud] = await Promise.all([db.offline.toArray(), listAudioObjects(current.userId)]);
-  if (activeDbName() !== current.dbName) return;
-  const present = new Set(cloud.map((item) => item.name));
-  const todo = local.filter((item) => !present.has(audioObjectPath(current.userId, item.stationId).split("/").slice(-1)[0]));
-  if (!todo.length) return;
-  emit({ audioPhase: "uploading", audioDone: 0, audioTotal: todo.length, audioBytes: 0, audioError: null });
-  let done = 0;
-  let bytes = 0;
-  let skipped = 0;
-  for (const item of todo) {
-    if (current.stopped) return;
-    let response: Response | undefined;
-    try {
-      const cache = await caches.open("radio-audio-v1");
-      response = await cache.match(audioCacheKey(item.stationId));
-    } catch {
-      continue;
-    }
-    if (!response) continue;
-    const blob = await response.blob();
-    if (blob.size > MAX_UPLOAD) {
-      skipped++;
-      continue;
-    }
-    try {
-      await uploadAudioObject(audioObjectPath(current.userId, item.stationId), blob);
-      bytes += blob.size;
-      done++;
-      emit({ audioDone: done, audioBytes: bytes });
-    } catch (error) {
-      skipped++;
-      const message = error instanceof Error ? error.message : "Не удалось загрузить аудио";
-      emit({ audioError: message });
-      if (error instanceof CloudError && (error.code === "auth" || error.code === "size")) break;
-    }
-  }
-  emit({ audioPhase: "idle", audioDone: done, audioBytes: bytes, audioSkipped: skipped });
 }
 
 /** Ручной запуск полной синхронизации из настроек. */
@@ -813,15 +613,13 @@ export async function syncNow(): Promise<void> {
 }
 
 export async function checkCloudReadiness(): Promise<CloudReadiness> {
-  const userId = currentUserId();
-  if (!userId) throw new Error("Войдите в облачный аккаунт");
+  if (!currentUserId()) throw new Error("Войдите в облачный аккаунт");
   const docs = await probeDocs().catch((error) => {
     if (error instanceof CloudError) return false;
     throw error;
   });
-  const bucket = prefOn(AUDIO_PREF_KEY) ? await probeBucket(userId).catch(() => false) : state.readiness?.bucket ?? false;
-  emit({ readiness: { docs, bucket } });
-  return { docs, bucket };
+  emit({ readiness: { docs } });
+  return { docs };
 }
 
 /* ------------------------- старая резервная копия (user_data) ------------------------- */

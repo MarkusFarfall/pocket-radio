@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { Check, CloudDownload, CloudUpload, Copy, Loader2, RefreshCw, ServerCog } from "lucide-react";
 import type { AuthUser } from "../../lib/auth/types";
-import { checkCloudReadiness, getSyncState, lastSyncAt, pullFromCloud, pushToCloud, setAudioSync, setAutoSync, syncNow, useSyncState } from "../../lib/sync";
-import { useOfflineItems } from "../../lib/hooks";
-import { fmtBytes } from "../../lib/templates";
+import { checkCloudReadiness, getSyncState, lastSyncAt, pullFromCloud, pushToCloud, setAutoSync, syncNow, useSyncState } from "../../lib/sync";
 import { toast } from "../../lib/toast";
 import { Toggle, btnGhost, btnPrimary } from "../../components/ui";
 import { Row } from "./parts";
@@ -12,7 +10,7 @@ import { Row } from "./parts";
  * SQL, которого не хватает уже работающему проекту. Держим его рядом с интерфейсом,
  * чтобы подготовка сервера занимала один Copy → Run. Полная версия — supabase/schema.sql.
  */
-const SYNC_SQL = `-- Pocket Radio: полная синхронизация
+const SYNC_SQL = `-- Pocket Radio: синхронизация аккаунта
 create table if not exists public.sync_docs (
   user_id uuid not null references auth.users (id) on delete cascade,
   key text not null,
@@ -36,29 +34,7 @@ for each row execute function public.sync_docs_touch();
 alter table public.sync_docs enable row level security;
 drop policy if exists "sync_docs_all_own" on public.sync_docs;
 create policy "sync_docs_all_own" on public.sync_docs
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
--- аудиофайлы скачанных плейлистов
-insert into storage.buckets (id, name, public)
-values ('user-media', 'user-media', false)
-on conflict (id) do nothing;
-
-drop policy if exists "user_media_select_own" on storage.objects;
-create policy "user_media_select_own" on storage.objects for select to authenticated
-  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
-
-drop policy if exists "user_media_insert_own" on storage.objects;
-create policy "user_media_insert_own" on storage.objects for insert to authenticated
-  with check (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
-
-drop policy if exists "user_media_update_own" on storage.objects;
-create policy "user_media_update_own" on storage.objects for update to authenticated
-  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text)
-  with check (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
-
-drop policy if exists "user_media_delete_own" on storage.objects;
-create policy "user_media_delete_own" on storage.objects for delete to authenticated
-  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);`;
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);`;
 
 const time = (ms: number) =>
   new Date(ms).toLocaleString("ru", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -79,23 +55,16 @@ function statusLine(s: ReturnType<typeof useSyncState>, legacyAt: number | null)
 
 export function CloudSync({ user }: { user: AuthUser }) {
   const s = useSyncState();
-  const downloads = useOfflineItems();
   const [busy, setBusy] = useState<"now" | "check" | "push" | "pull" | null>(null);
-  const localBytes = downloads.reduce((sum, item) => sum + item.size, 0);
-  const setup = s.readiness ? !s.readiness.docs || (s.audio && !s.readiness.bucket) : s.phase === "setup";
+  const setup = s.readiness ? !s.readiness.docs : s.phase === "setup";
   const status = statusLine(s, lastSyncAt(user.id));
-  const busyAudio = s.audioPhase !== "idle";
-  const audioPct = s.audioTotal ? Math.round((s.audioDone / s.audioTotal) * 100) : 0;
 
   const run = async (kind: "now" | "check") => {
     setBusy(kind);
     try {
       if (kind === "check") {
         const ready = await checkCloudReadiness();
-        toast(
-          ready.docs ? (ready.bucket || !s.audio ? "Сервер готов" : "Документы готовы, бакет для аудио не найден") : "Нужно выполнить SQL из supabase/schema.sql",
-          ready.docs ? "ok" : "error"
-        );
+        toast(ready.docs ? "Сервер готов" : "Нужно выполнить SQL из supabase/schema.sql", ready.docs ? "ok" : "error");
         if (ready.docs) await syncNow();
       } else {
         await syncNow();
@@ -146,34 +115,10 @@ export function CloudSync({ user }: { user: AuthUser }) {
       </Row>
 
       <Row
-        title="Скачанное аудио"
-        desc={
-          <>
-            {downloads.length
-              ? `На устройстве ${downloads.length} ${downloads.length === 1 ? "файл" : downloads.length < 5 ? "файла" : "файлов"} · ${fmtBytes(localBytes)}. `
-              : "Пока ничего не скачано. "}
-            Файлы из скачанных плейлистов переносятся через Supabase Storage, чтобы играть офлайн сразу после входа.
-            {s.audioSkipped ? ` Не перенесено: ${s.audioSkipped} (нет файла или больше 45 МБ).` : ""}
-          </>
-        }
-        stack
+        title="Скачанная музыка"
+        desc="Скачанные файлы остаются на своём устройстве: в облако уходят только плейлисты, обложки и прогресс. На другом компьютере плейлист появится сразу, а музыку нужно скачать заново."
       >
-        <div className="flex items-center justify-between gap-3 text-sm">
-          Переносить аудио между устройствами
-          <Toggle checked={s.audio} onChange={setAudioSync} label="Синхронизация скачанного аудио" />
-        </div>
-        {busyAudio && (
-          <div>
-            <div className="mb-1 flex justify-between text-xs text-muted">
-              <span>{s.audioPhase === "uploading" ? "Отправляем аудио" : "Скачиваем аудио"} {s.audioDone} из {s.audioTotal}</span>
-              <span>{fmtBytes(s.audioBytes)}</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-              <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${audioPct}%` }} />
-            </div>
-          </div>
-        )}
-        {s.audioError && <div className="text-xs text-bad">{s.audioError}</div>}
+        <CloudDownload size={22} className="shrink-0 text-muted" />
       </Row>
 
       {setup && (
@@ -181,9 +126,8 @@ export function CloudSync({ user }: { user: AuthUser }) {
           title="Подготовить сервер"
           desc={
             <>
-              В вашем Supabase-проекте нужна таблица <code className="font-mono">sync_docs</code> и приватный бакет{" "}
-              <code className="font-mono">user-media</code>. Выполните SQL ниже один раз: Supabase → SQL Editor → Run.
-              После этого нажмите «Проверить сервер».
+              В вашем Supabase-проекте нужна таблица <code className="font-mono">sync_docs</code>. Выполните SQL ниже один
+              раз: Supabase → SQL Editor → Run. После этого нажмите «Проверить сервер».
             </>
           }
           stack

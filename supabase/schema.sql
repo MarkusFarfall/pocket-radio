@@ -34,9 +34,10 @@ drop policy if exists "user_data_all_own" on public.user_data;
 create policy "user_data_all_own" on public.user_data
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- 3b. Полная синхронизация: документы и скачанное аудио -------------------------
--- Каждая станция, плейлист, трек, сессия, настройка и манифест аудио — отдельная
--- строка. Так обмен идёт порциями и не упирается в лимит размера запроса.
+-- 3b. Синхронизация аккаунта: документы -----------------------------------------
+-- Каждая станция, плейлист (с обложкой), трек, сессия и настройка — отдельная строка.
+-- Так обмен идёт порциями и не упирается в лимит размера запроса. Скачанные
+-- аудиофайлы в облако не попадают: они остаются на своём устройстве.
 create table if not exists public.sync_docs (
   user_id    uuid not null references auth.users (id) on delete cascade,
   key        text not null,
@@ -67,33 +68,6 @@ alter table public.sync_docs enable row level security;
 drop policy if exists "sync_docs_all_own" on public.sync_docs;
 create policy "sync_docs_all_own" on public.sync_docs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
--- Приватный бакет для аудиофайлов скачанных плейлистов.
--- Путь объекта: <user_id>/audio/<base64url от id трека>.bin
-insert into storage.buckets (id, name, public)
-values ('user-media', 'user-media', false)
-on conflict (id) do nothing;
-
-drop policy if exists "user_media_select_own" on storage.objects;
-create policy "user_media_select_own" on storage.objects
-  for select to authenticated
-  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
-
-drop policy if exists "user_media_insert_own" on storage.objects;
-create policy "user_media_insert_own" on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
-
-drop policy if exists "user_media_update_own" on storage.objects;
-create policy "user_media_update_own" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text)
-  with check (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
-
-drop policy if exists "user_media_delete_own" on storage.objects;
-create policy "user_media_delete_own" on storage.objects
-  for delete to authenticated
-  using (bucket_id = 'user-media' and (storage.foldername(name))[1] = (select auth.uid())::text);
 
 -- 4. Автосоздание профиля при регистрации ---------------------------------------
 create or replace function public.handle_new_user()

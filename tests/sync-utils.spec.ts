@@ -19,7 +19,7 @@ test("document hashes ignore key order and track keys normalize ё/case/spacing"
   expect(result).toEqual({ stable: true, hash: true, different: true, track: true });
 });
 
-test("buildAllDocs assigns stable ids, keeps user covers and manifests offline audio", async ({ page }) => {
+test("buildAllDocs assigns stable ids, keeps user covers and never sends downloaded audio", async ({ page }) => {
   await open(page);
   const result = await page.evaluate(async () => {
     const { db, saveStation, setSetting } = await import("/src/lib/db.ts");
@@ -54,7 +54,7 @@ test("buildAllDocs assigns stable ids, keeps user covers and manifests offline a
       hasStation: !!docs.get(`station:${station.syncId ?? station.id}`),
       sessionSyncId: session?.syncId,
       cover: (playlistDoc?.data as { cover?: string })?.cover,
-      audio: docs.get(`audio:${station.id}`)?.data,
+      audioDoc: docs.get(`audio:${station.id}`),
       resolvedKey: byLocalId?.key,
       docs: docs.size,
     };
@@ -63,7 +63,8 @@ test("buildAllDocs assigns stable ids, keeps user covers and manifests offline a
   expect(result.hasStation).toBe(true);
   expect(result.sessionSyncId).toMatch(/^s-[0-9a-f]{8}$/);
   expect(result.cover).toBe("data:image/png;base64,AAAA");
-  expect(result.audio).toMatchObject({ size: 1234, ts: 5 });
+  // Скачанное аудио — локальное: документа для него нет.
+  expect(result.audioDoc).toBeUndefined();
   expect(result.resolvedKey).toContain("station:");
   expect(result.docs).toBeGreaterThan(5);
 });

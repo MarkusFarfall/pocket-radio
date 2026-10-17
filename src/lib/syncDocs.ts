@@ -1,8 +1,6 @@
 import { db, deleteStations, importJSON, setSetting, type Setting, type SyncMeta } from "./db";
-import { removeVod } from "./offline";
 import { applyPrefDoc, buildPrefDoc, buildPrefDocs } from "./syncPrefs";
 import {
-  audioDocKey,
   docKeyValue,
   docKind,
   eventDocKey,
@@ -71,13 +69,12 @@ const legacySessionId = (session: Session) => `s-${hashString(`${session.station
  * замечает удаления: ключи, которые были в журнале, но пропали из базы.
  */
 export async function buildAllDocs(): Promise<Map<string, BuiltDoc>> {
-  const [stations, settings, tracks, sessions, events, downloads] = await Promise.all([
+  const [stations, settings, tracks, sessions, events] = await Promise.all([
     db.stations.toArray(),
     db.settings.toArray(),
     db.tracks.toArray(),
     db.sessions.toArray(),
     db.events.toArray(),
-    db.offline.toArray(),
   ]);
   const docs = new Map<string, BuiltDoc>();
   const put = (key: string, data: unknown) => docs.set(key, { key, data });
@@ -111,8 +108,6 @@ export async function buildAllDocs(): Promise<Map<string, BuiltDoc>> {
   for (const event of events) put(eventDocKey(eventFingerprint(event)), eventDoc(event));
 
   for (const pref of buildPrefDocs()) put(prefDocKey(pref.name), plain(pref.data));
-
-  for (const item of downloads) put(audioDocKey(item.stationId), { stationId: item.stationId, size: item.size, ts: item.ts });
 
   return docs;
 }
@@ -156,10 +151,6 @@ export async function buildDoc(key: string): Promise<BuiltDoc | null> {
     const data = buildPrefDoc(value);
     return data === undefined ? null : { key, data: plain(data) };
   }
-  if (kind === "audio") {
-    const item = await db.offline.get(value);
-    return item ? { key, data: { stationId: item.stationId, size: item.size, ts: item.ts } } : null;
-  }
   return null;
 }
 
@@ -167,10 +158,6 @@ export async function buildDoc(key: string): Promise<BuiltDoc | null> {
 
 export interface ApplyOutcome {
   keys: string[];
-  /** станции, для которых пришёл манифест скачанного аудио */
-  audioDownload: string[];
-  /** станции, аудио которых удалено в облаке */
-  audioDelete: string[];
   prefs: string[];
 }
 
@@ -189,8 +176,6 @@ function validateEvent(value: unknown): value is Record<string, unknown> {
  */
 export async function applyDocs(docs: SyncDoc[]): Promise<ApplyOutcome> {
   const keys: string[] = [];
-  const audioDownload: string[] = [];
-  const audioDelete: string[] = [];
   const prefs: string[] = [];
   const tombstones: SyncDoc[] = [];
   const stations: unknown[] = [];
@@ -229,7 +214,7 @@ export async function applyDocs(docs: SyncDoc[]): Promise<ApplyOutcome> {
         keys.push(doc.key);
       }
       continue;
-    } else if (kind === "audio" && isRecord(doc.data) && typeof doc.data.stationId === "string") audioDownload.push(doc.data.stationId);
+    }
     keys.push(doc.key);
   }
 
@@ -263,14 +248,11 @@ export async function applyDocs(docs: SyncDoc[]): Promise<ApplyOutcome> {
     } else if (kind === "event") {
       const event = (await db.events.toArray()).find((item) => eventDocKey(eventFingerprint(item)) === doc.key);
       if (event?.id !== undefined) await db.events.delete(event.id);
-    } else if (kind === "audio") {
-      audioDelete.push(value);
-      await removeVod({ id: value, url: "" });
     }
     keys.push(doc.key);
   }
 
-  return { keys, audioDownload, audioDelete, prefs };
+  return { keys, prefs };
 }
 
 export const metaForDoc = (doc: SyncDoc, at: number): SyncMeta => ({
