@@ -211,3 +211,26 @@
   .release-archive-row { padding: 7px; gap: 9px; }
   .release-sources-foot { font-size: .64rem; padding: 9px 12px 12px; }
 }
+
+/* ---------------------------------------- треки релиза (MusicBrainz → Deezer) ---------------------------------------- */
+.release-tracks { display: flex; flex-direction: column; }
+.release-tracks-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 2px 10px; }
+.release-preview-all { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 12px; border-radius: 999px; background: var(--accent, #e4532b); color: var(--accent-ink, #fff); font-size: .78rem; font-weight: 700; }
+.release-preview-all:disabled { opacity: .6; }
+.release-track-list { display: flex; flex-direction: column; }
+.release-track { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-top: 1px solid color-mix(in srgb, var(--line, #2a3340) 60%, transparent); }
+.release-track:first-child { border-top: 0; }
+.release-track-number { width: 22px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; font-size: .72rem; color: var(--muted, #8b95a5); }
+.release-track-play { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; background: var(--accent, #e4532b); color: var(--accent-ink, #fff); flex-shrink: 0; }
+.release-track-play:disabled { opacity: .45; }
+.release-track-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; color: var(--muted, #8b95a5); flex-shrink: 0; }
+.release-track-icon:hover { background: var(--surface-2, #1b222c); color: var(--ink, #e8ecf2); }
+.release-free-links { display: flex; gap: 8px; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--accent, #e4532b) 8%, transparent); font-size: .74rem; line-height: 1.5; }
+.release-tracks-note { margin-top: 10px; padding: 0 2px; font-size: .68rem; line-height: 1.5; color: var(--muted, #8b95a5); }
+@media (max-width: 640px) {
+  .release-tracks-head { flex-wrap: wrap; }
+  .release-preview-all { min-height: 44px; }
+  .release-track { gap: 8px; padding: 7px 0; }
+  .release-track-play, .release-track-icon { width: 44px; height: 44px; }
+  .release-tracks-note { font-size: .64rem; }
+}

@@ -67,6 +67,7 @@ async function mockSources(page: Page, calls: SearchCalls, archiveDocs = 0, mbSt
   });
   await page.route("https://archive.org/metadata/**", (route) => route.fulfill(json({ metadata: { title: "Бордерлайн", artist: "Земфира" }, files: [{ name: "01.mp3" }] })));
   await page.route("https://api.audius.co/**", (route) => route.fulfill(json({ data: [] })));
+  await page.route("https://musicbrainz.org/ws/2/release?**", (route) => route.fulfill(json({ releases: [] })));
 }
 
 async function boot(page: Page, width = 390) {
@@ -181,7 +182,8 @@ test("релиз из дискографии открывает проверку
 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("tab", { name: /Archive/ })).toBeVisible();
+  await dialog.getByRole("tab", { name: /Archive/ }).click();
+  await expect(dialog.getByRole("tab", { name: /Archive/ })).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => calls.archive.some((q) => q.includes('creator:"Земфира"') && q.includes('title:"Бордерлайн"'))).toBe(true);
   const rows = dialog.locator(".release-archive-row");
   await expect(rows.first()).toContainText("Бордерлайн");
