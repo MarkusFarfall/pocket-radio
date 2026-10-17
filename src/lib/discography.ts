@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { itunes } from "./sources";
-import { mbJson } from "./musicbrainz";
 import { artistSearchVariants } from "./archive";
 import { fixText } from "./text";
 
@@ -61,6 +60,8 @@ export function kindGroup(kind: ReleaseKind): "albums" | "ep" | "live" | "collec
 const CACHE_KEY = "pr.discography.v1";
 const CACHE_TTL = 7 * 86_400_000;
 const CACHE_LIMIT = 40;
+const MB_INTERVAL = 1_100;
+const REQUEST_TIMEOUT = 15_000;
 
 interface CacheEntry {
   savedAt: number;
@@ -117,6 +118,74 @@ function toCache(artist: string, data: Discography) {
   } catch {
     /* переполнение хранилища не должно ломать поиск */
   }
+}
+
+/** MusicBrainz не любит частые запросы: выстраиваем их в очередь с интервалом и повторами. */
+let mbChain: Promise<unknown> = Promise.resolve();
+let mbLastAt = 0;
+
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function timedSignal(signal?: AbortSignal) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException("Timeout", "TimeoutError")), REQUEST_TIMEOUT);
+  const onAbort = () => controller.abort(new DOMException("Aborted", "AbortError"));
+  signal?.addEventListener("abort", onAbort, { once: true });
+  return {
+    signal: controller.signal,
+    done: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+function mbJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const run = async (): Promise<T> => {
+    let lastError: unknown = new Error("MusicBrainz не ответил");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      const wait = MB_INTERVAL - (Date.now() - mbLastAt);
+      if (wait > 0) await sleep(wait, signal);
+      mbLastAt = Date.now();
+      const gate = timedSignal(signal);
+      try {
+        const response = await fetch(url, { headers: { Accept: "application/json" }, signal: gate.signal });
+        if (response.status === 503 || response.status === 429) {
+          lastError = new Error("MusicBrainz перегружен");
+          gate.done();
+          await sleep(1_200 * (attempt + 1), signal);
+          continue;
+        }
+        if (!response.ok) {
+          gate.done();
+          throw new Error(`MusicBrainz ответил ${response.status}`);
+        }
+        return (await response.json()) as T;
+      } catch (error) {
+        gate.done();
+        lastError = error;
+        if (signal?.aborted) throw error;
+        await sleep(900 * (attempt + 1), signal).catch(() => undefined);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("MusicBrainz недоступен");
+  };
+  const chained = mbChain.then(run, run);
+  mbChain = chained.catch(() => undefined);
+  return chained;
 }
 
 interface MbArtist {

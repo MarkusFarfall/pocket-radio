@@ -39,8 +39,6 @@ const audiusTrack = (overrides: Record<string, unknown> = {}) => ({
 async function mockBase(page: Page, calls: Calls) {
   await page.route("https://musicbrainz.org/ws/2/artist**", (route) => route.fulfill(json(ARTIST)));
   await page.route("https://musicbrainz.org/ws/2/release-group**", (route) => route.fulfill(json(GROUPS)));
-  // Карточка сначала открывает «Треки»; в этих тестах треклист пуст, проверяем источники.
-  await page.route("https://musicbrainz.org/ws/2/release?**", (route) => route.fulfill(json({ releases: [] })));
   await page.route("https://coverartarchive.org/**", (route) =>
     route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"/>' })
   );
@@ -77,14 +75,6 @@ async function openRelease(page: Page) {
   await page.getByRole("button", { name: "Где слушать: Бордерлайн" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("tab", { name: /Треки/ })).toBeVisible();
-  return dialog;
-}
-
-/** Тесты источников проверяют вкладку Archive, а не треклист. */
-async function openArchive(page: Page) {
-  const dialog = await openRelease(page);
-  await dialog.getByRole("tab", { name: /Archive/ }).click();
   return dialog;
 }
 
@@ -111,7 +101,7 @@ test("Archive отделяет точное совпадение от случа
     );
   });
   await boot(page);
-  const dialog = await openArchive(page);
+  const dialog = await openRelease(page);
 
   await expect(dialog.getByText("Точных совпадений: 2")).toBeVisible();
   const rows = dialog.locator(".release-archive-row");
@@ -129,7 +119,7 @@ test("Archive без релиза объясняет причину, а не п�
     route.fulfill(json({ response: { numFound: 1, docs: [{ identifier: "junk", title: "Спасибо", creator: "Другой автор", downloads: 1000 }] } }))
   );
   await boot(page);
-  const dialog = await openArchive(page);
+  const dialog = await openRelease(page);
 
   await expect(dialog.getByText("В Internet Archive этого релиза нет")).toBeVisible();
   await expect(dialog.locator(".release-archive-row")).toHaveCount(0);
@@ -161,7 +151,7 @@ test("Openverse и Commons проверяются по нажатию и пок�
   await mockBase(page, calls);
   await page.route("https://archive.org/advancedsearch.php**", (route) => route.fulfill(json({ response: { numFound: 0, docs: [] } })));
   await boot(page);
-  const dialog = await openArchive(page);
+  const dialog = await openRelease(page);
   await expect(dialog.getByText("В Internet Archive этого релиза нет")).toBeVisible();
   expect(calls.openverse).toBe(0);
   expect(calls.commons).toBe(0);
@@ -231,7 +221,7 @@ test("Archive проверяет metadata: концерт подписан ис�
     route.fulfill(json({ metadata: { title: "Земфира", album: "Бордерлайн", creator: "Земфира" }, files: [{ name: "01.mp3" }] }))
   );
   await boot(page);
-  const dialog = await openArchive(page);
+  const dialog = await openRelease(page);
 
   await expect(dialog.getByText("Точных совпадений: 1")).toBeVisible({ timeout: 20000 });
   const row = dialog.locator(".release-archive-row").first();
@@ -248,7 +238,7 @@ test("карточка релиза не перезапрашивает Archive 
     return route.fulfill(json({ response: { numFound: 0, docs: [] } }));
   });
   await boot(page);
-  const dialog = await openArchive(page);
+  const dialog = await openRelease(page);
   await expect(dialog.getByText("В Internet Archive этого релиза нет").first()).toBeVisible();
   const first = calls.archive.length;
   await page.waitForTimeout(2500);

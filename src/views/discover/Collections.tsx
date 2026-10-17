@@ -10,7 +10,6 @@ import { GLYPHS } from "../../lib/glyphs";
 import { createPlaylist, downloadItems, itemStationId, itemToStation } from "../../lib/playlists";
 import { gotoPlaylist, openPicker } from "../../lib/picker";
 import { KIND_LABEL, kindGroup, useDiscography, type DiscographyRelease } from "../../lib/discography";
-import type { PlaylistItem } from "../../lib/types";
 import { useForwardState } from "../../lib/appHistory";
 import { player, usePlayer, type PlayerSourceContext } from "../../lib/player";
 import { fmtClock } from "../../lib/templates";
@@ -649,15 +648,6 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
     onPlay(current, stations.map((station) => station.id), { kind: "collection", title: release ? `${release.artist} — ${release.release.title}` : track.providerName });
   };
 
-  const playPlaylistItems = (items: PlaylistItem[], current: PlaylistItem) => {
-    const stations = items.map((item) => itemToStation(item));
-    const active = stations.find((station) => station.id === itemStationId(current.id));
-    if (!active) return;
-    player.pin(stations);
-    // Превью слушают, листая список: полноэкранный плеер здесь только мешает.
-    onPlay(active, stations.map((station) => station.id));
-  };
-
   const addDiscoveredTrack = (track: DiscoveredMusicTrack, downloadAfterAdd: boolean) => {
     const allowed = track.canDownload !== false;
     if (downloadAfterAdd && !allowed) toast("Автор запретил скачивание этой записи — добавлено без офлайн-копии", "info");
@@ -988,8 +978,6 @@ function MusicDiscovery({ online, onPlay }: { online: boolean; onPlay: ViewProps
           onOpenAlbum={(album) => setOpen(album)}
           onPlayTracks={playReleaseTracks}
           onAddTrack={addDiscoveredTrack}
-          onPlayItems={playPlaylistItems}
-          onAddItems={(items) => openPicker({ items, suggest: items[0]?.album || items[0]?.title?.slice(0, 70) || "Треки релиза", cover: items[0]?.logo })}
           onArchiveCount={(count) => setLookups((prev) => ({ ...prev, [release.release.id]: { count, limited: false } }))}
         />
       )}
