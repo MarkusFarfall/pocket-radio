@@ -337,6 +337,8 @@ async function runCycle(reason: CycleReason) {
 async function ensureReady(_current: Engine): Promise<boolean> {
   try {
     if (state.readiness?.docs) return true;
+    // Один раз за сеанс отрицательный ответ кешируем: иначе каждая правка упирается в сеть.
+
     const docs = await probeDocs();
     emit({ readiness: { docs } });
     if (!docs) {

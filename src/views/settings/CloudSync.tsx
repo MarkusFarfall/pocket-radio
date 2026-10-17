@@ -141,6 +141,9 @@ export function CloudSync({ user }: { user: AuthUser }) {
               {busy === "check" ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Проверить сервер
             </button>
           </div>
+          <p className="text-xs leading-relaxed text-muted">
+            Уже выполнили SQL, а статус всё ещё красный? Нажмите «Проверить сервер» — приложение перезапросит схему.
+          </p>
         </Row>
       )}
 
